@@ -1,0 +1,176 @@
+:root {
+  --green-600: #2e7d32;
+  --green-500: #43a047;
+  --green-100: #e8f5e9;
+  --text-700: #2f2f2f;
+  --text-500: #5a5a5a;
+  --border: #e6e6e6;
+  --bg: #ffffff;
+  --shadow: 0 10px 25px rgba(0,0,0,0.08);
+}
+
+.svc {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.svc-sidebar {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 16px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.svc-tab {
+  text-align: left;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-700);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.svc-tab:hover {
+  background: var(--green-100);
+  border-color: var(--green-100);
+}
+
+.svc-tab.is-active {
+  background: #fff;
+  border-color: var(--green-500);
+  color: var(--green-600);
+  box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.12) inset;
+}
+
+.svc-panel {
+  min-height: 360px;
+}
+
+.svc-card {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 20px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: var(--shadow);
+  align-items: center;
+}
+
+.svc-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  line-height: 1.2;
+  color: var(--text-700);
+}
+
+.svc-desc {
+  margin: 0;
+  color: var(--text-500);
+  font-size: 16px;
+}
+
+.svc-media {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 24px;    /* marco redondeado visible */
+  overflow: hidden;       /* recorta cualquier desborde para respetar el radio */
+  background: #fff;       /* opcional: evita parches grises detrás de PNGs */
+}
+
+/* Imagen responsiva sin recortes */
+.svc-image {
+  display: block;
+  max-width: 100%;
+  width: 100%;
+  height: auto;           /* mantiene proporción natural */
+  max-height: 620px;      /* límite de alto (ajusta a tu gusto) */
+  object-fit: contain;    /* NO recorta, ajusta dentro del contenedor */
+  animation: fadeIn 320ms ease;
+  /* border-radius ya no es necesario aquí, lo maneja el contenedor */
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive */
+@media (max-width: 960px) {
+  .svc {
+    grid-template-columns: 1fr;
+  }
+  .svc-sidebar {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+  .svc-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.svc-desc-html .lead {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+  color: var(--text-700);
+}
+
+.svc-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.svc-list li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.svc-list .icon {
+  font-size: 20px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.svc-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.badge {
+  background: var(--green-100);
+  color: var(--green-600);
+  border: 1px solid var(--green-500);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
