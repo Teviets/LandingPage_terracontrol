@@ -119,3 +119,15 @@ h1 {
   color: white;
   font-size: 0.9rem;
 }
+
+.App-footer a {
+  color: white;
+  text-decoration: none;
+}
+
+.App-footer a:hover {
+  text-decoration: underline;
+}
+
+
+

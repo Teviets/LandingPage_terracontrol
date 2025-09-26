@@ -1,0 +1,41 @@
+.logoico{
+    width: 100px;
+    height: 100px;
+    margin: 0 auto;
+    display: block;
+    margin-bottom: 20px;
+}
+
+.cardContentMUI {
+    display: flex;
+    flex-direction: column;
+    gap: 16px; /* Espacio entre los elementos */
+}
+
+
+.boxInputs{
+    margin-top: 20px;
+}
+
+
+.cardContentMUIInstruccions{
+    text-align: left;
+    margin-top: 20px;
+}
+
+.Delete-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #556b2f;
+}
+
+.cardLogin {
+  position: relative;
+  z-index: 1; /* Coloca el CardLogin encima de la imagen */
+  background-color: rgba(255, 255, 255, 0.8); /* Fondo blanco con transparencia */
+  border-radius: 8px; /* Opcional: agrega bordes redondeados */
+  padding: 20px; /* Espaciado interno */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Sombra para darle profundidad */
+}
