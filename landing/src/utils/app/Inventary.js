@@ -21,7 +21,7 @@ export const TYPEPROD = [
 
 
 export const CATEGORYPROD =[
-    "Agroquimicos",
+    "Agroquímicos",
     "Equipo e Insumo",
     "Semilla"
 ].map((category, index) => ({

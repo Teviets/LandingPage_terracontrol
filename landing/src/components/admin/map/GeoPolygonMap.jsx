@@ -1,7 +1,7 @@
 import { GoogleMap, DrawingManager, useJsApiLoader } from '@react-google-maps/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-const containerStyle = { width: '100%', height: '100%' };
+const containerStyle = { width: '100%', height: '100%', minHeight: '360px' };
 const defaultCenter = { lat: 14.6349, lng: -90.5069 };
 const normalizeName = (value = '') =>
   value
