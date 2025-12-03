@@ -18,3 +18,13 @@ VITE_API_BASE_URL=http://localhost:5174/api
 ```
 
 When building inside Docker the default is `/api`, so frontend network requests are routed through Nginx and end up in the Express API container.
+
+For the external AWS API client located at `src/utils/externalApiClient.js`, you can override the default base URL (`https://oz544h1nwc.execute-api.us-east-2.amazonaws.com/deploy`) with any of the following environment variables (in order of precedence):
+
+```
+VITE_TERRACONTROL_EXTERNAL_API
+VITE_EXTERNAL_API_BASE
+VITE_EXTERNAL_API_URL
+```
+
+This keeps the external integration isolated from the internal `/api` backend.

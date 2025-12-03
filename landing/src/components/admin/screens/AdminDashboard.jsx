@@ -19,6 +19,7 @@ import { TYPEPROD, CATEGORYPROD } from '../../../utils/app/Inventary';
 import { CULTIVOS } from '../../../utils/app/Cultivos';
 import { departments, municipalities, lotNames } from '../data/geoData';
 import GeoPolygonMap from '../map/GeoPolygonMap';
+import { externalApiClient } from '../../../utils/externalApiClient';
 import './admin-dashboard.css';
 
 ChartJS.register(
@@ -541,8 +542,12 @@ function AdminDashboard() {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
   const [municipalityInput, setMunicipalityInput] = useState('');
   const [selectedMunicipalityId, setSelectedMunicipalityId] = useState('');
-  const [selectedLotInput, setSelectedLotInput] = useState('');
   const [selectedLotId, setSelectedLotId] = useState('');
+  const [locationsData, setLocationsData] = useState([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [locationsError, setLocationsError] = useState('');
+  const [showMapFilters, setShowMapFilters] = useState(true);
+  const [showMapSummary, setShowMapSummary] = useState(true);
   const availableYears = useMemo(() => {
     const years = new Set();
     mockTaskPerformance.forEach((entry) => {
@@ -759,14 +764,67 @@ function AdminDashboard() {
     );
   }, [selectedDepartmentId]);
 
+  const fincaOptions = useMemo(
+    () =>
+      (Array.isArray(locationsData) ? locationsData : []).map((location) => ({
+        id: String(location.id),
+        name: location.nombre || `Finca ${location.id}`
+      })),
+    [locationsData]
+  );
+
   const selectedDepartmentName =
     departments.find((dept) => dept.id === selectedDepartmentId)?.name || '';
   const selectedMunicipalityName =
     municipalities.find((municipality) => municipality.id === selectedMunicipalityId)?.name || '';
-  const selectedLotName = lotNames.find((lot) => lot.id === selectedLotId)?.name || '';
+  const selectedLotName = fincaOptions.find((lot) => lot.id === selectedLotId)?.name || '';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchLocations = async () => {
+      setLocationsLoading(true);
+      setLocationsError('');
+      const fincaQueryParam =
+        selectedLotId && /^\d+$/.test(String(selectedLotId)) ? String(selectedLotId) : '';
+      const query = {};
+      if (fincaQueryParam) {
+        query.finca = fincaQueryParam;
+      }
+      if (selectedDepartmentName) {
+        query.departamento = selectedDepartmentName;
+      }
+      if (selectedMunicipalityName) {
+        query.municipio = selectedMunicipalityName;
+      }
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/locations', {
+          query
+        });
+        if (cancelled) return;
+        const records = Array.isArray(payload?.data) ? payload.data : [];
+        setLocationsData(records);
+      } catch (error) {
+        if (cancelled) return;
+        setLocationsData([]);
+        setLocationsError(error.message || 'No se pudieron cargar las fincas.');
+      } finally {
+        if (!cancelled) {
+          setLocationsLoading(false);
+        }
+      }
+    };
+
+    fetchLocations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDepartmentName, selectedMunicipalityName, selectedLotId]);
   const kpiHighlights = useMemo(() => {
     const lotSummary = LOT_SUMMARY[selectedLotId];
-    const lotCount = selectedLotId ? 1 : lotNames.length || 1;
+    const lotCount = selectedLotId ? 1 : fincaOptions.length || lotNames.length || 1;
     const activeHectares = selectedLotId
       ? lotSummary?.hectares || DEFAULT_LOT_SUMMARY.hectares
       : TOTAL_HECTARES || DEFAULT_LOT_SUMMARY.hectares;
@@ -795,9 +853,9 @@ function AdminDashboard() {
           : 'Sin registros de tareas'
       },
       {
-        label: 'Costo promedio por lote',
+        label: 'Costo promedio por finca',
         value: costPerLot,
-        helper: selectedLotName || `${lotCount} lotes simulados`
+        helper: selectedLotName || `${lotCount} fincas monitoreadas`
       },
       {
         label: 'Costo promedio por hectárea',
@@ -812,7 +870,7 @@ function AdminDashboard() {
         helper: selectedLotName ? `Inventario de ${selectedLotName}` : 'Inventario consolidado'
       }
     ];
-  }, [selectedLotId, selectedLotName, totalAmount, totalCompleted]);
+  }, [selectedLotId, selectedLotName, totalAmount, totalCompleted, fincaOptions.length]);
 
   const inventoryStats = useMemo(() => {
     const types = Array.isArray(TYPEPROD) ? TYPEPROD : [];
@@ -1184,9 +1242,7 @@ function AdminDashboard() {
 
   const handleLotChange = (event) => {
     const value = event.target.value;
-    setSelectedLotInput(value);
-    const match = lotNames.find((lot) => lot.name.toLowerCase() === value.toLowerCase());
-    setSelectedLotId(match?.id || '');
+    setSelectedLotId(value);
   };
 
   const formatPermissionsList = (permissions = {}) => {
@@ -1433,57 +1489,84 @@ function AdminDashboard() {
             <section className="admin-dashboard__quadrant admin-dashboard__quadrant--map">
               <p className="admin-dashboard__quadrant-label">Cuadrante 1</p>
               <div className="admin-dashboard__map">
-                <div className="admin-dashboard__map-filters">
-                  <label>
-                    <span>Departamento</span>
-                    <input
-                      type="text"
-                      list="departments-list"
-                      placeholder="Busca un departamento"
-                      value={departmentInput}
-                      onChange={handleDepartmentChange}
-                    />
-                    <datalist id="departments-list">
-                      {departments.map((department) => (
-                        <option key={department.id} value={department.name} />
-                      ))}
-                    </datalist>
-                  </label>
-                  <label>
-                    <span>Municipio</span>
-                    <input
-                      type="text"
-                      list="municipalities-list"
-                      placeholder="Busca municipio"
-                      value={municipalityInput}
-                      onChange={handleMunicipalityChange}
-                    />
-                    <datalist id="municipalities-list">
-                      {filteredMunicipalities.map((municipality) => (
-                        <option key={municipality.id} value={municipality.name} />
-                      ))}
-                    </datalist>
-                  </label>
-                  <label>
-                    <span>Lote</span>
-                    <input
-                      type="text"
-                      list="lots-list"
-                      placeholder="Selecciona un lote"
-                      value={selectedLotInput}
-                      onChange={handleLotChange}
-                    />
-                    <datalist id="lots-list">
-                      {lotNames.map((lot) => (
-                        <option key={lot.id} value={lot.name} />
-                      ))}
-                    </datalist>
-                  </label>
-                </div>
+                {showMapFilters ? (
+                  <div className="admin-dashboard__map-filters">
+                    <button
+                      type="button"
+                      className="admin-dashboard__map-toggle"
+                      onClick={() => setShowMapFilters(false)}
+                    >
+                      Ocultar filtros
+                    </button>
+                    <label>
+                      <span>Departamento</span>
+                      <input
+                        type="text"
+                        list="departments-list"
+                        placeholder="Busca un departamento"
+                        value={departmentInput}
+                        onChange={handleDepartmentChange}
+                      />
+                      <datalist id="departments-list">
+                        {departments.map((department) => (
+                          <option key={department.id} value={department.name} />
+                        ))}
+                      </datalist>
+                    </label>
+                    <label>
+                      <span>Municipio</span>
+                      <input
+                        type="text"
+                        list="municipalities-list"
+                        placeholder="Busca municipio"
+                        value={municipalityInput}
+                        onChange={handleMunicipalityChange}
+                      />
+                      <datalist id="municipalities-list">
+                        {filteredMunicipalities.map((municipality) => (
+                          <option key={municipality.id} value={municipality.name} />
+                        ))}
+                      </datalist>
+                    </label>
+                    <label>
+                      <span>Finca</span>
+                      <select value={selectedLotId} onChange={handleLotChange} disabled={!fincaOptions.length}>
+                        <option value="">Todas las fincas</option>
+                        {fincaOptions.map((finca) => (
+                          <option key={finca.id} value={finca.id}>
+                            {finca.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="admin-dashboard__map-statuses">
+                      {locationsLoading && (
+                        <p className="admin-dashboard__map-status">Cargando fincas...</p>
+                      )}
+                      {locationsError && (
+                        <p className="admin-dashboard__map-status admin-dashboard__map-status--error">
+                          {locationsError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="admin-dashboard__map-toggle admin-dashboard__map-toggle--floating"
+                    onClick={() => setShowMapFilters(true)}
+                  >
+                    Mostrar filtros
+                  </button>
+                )}
                 <GeoPolygonMap
                   selectedDepartment={selectedDepartmentName}
                   selectedMunicipality={selectedMunicipalityName}
                   selectedLot={selectedLotName}
+                  locations={locationsData}
+                  isLoadingLocations={locationsLoading}
+                  showSummary={showMapSummary}
+                  onToggleSummary={() => setShowMapSummary((prev) => !prev)}
                 />
               </div>
             </section>
@@ -1580,7 +1663,7 @@ function AdminDashboard() {
               <p>
                 {selectedLotName
                   ? `Contexto financiero para ${selectedLotName}`
-                  : 'Promedios consolidados de los lotes simulados'}
+                  : 'Promedios consolidados de las fincas simuladas'}
               </p>
             </div>
             <div className="admin-dashboard__kpi-grid">

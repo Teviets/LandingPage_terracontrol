@@ -1,5 +1,5 @@
-import { GoogleMap, DrawingManager, useJsApiLoader } from '@react-google-maps/api';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { GoogleMap, Polygon, useJsApiLoader } from '@react-google-maps/api';
+import { useEffect, useMemo, useRef } from 'react';
 
 const containerStyle = { width: '100%', height: '100%', minHeight: '360px' };
 const defaultCenter = { lat: 14.6349, lng: -90.5069 };
@@ -10,6 +10,27 @@ const normalizeName = (value = '') =>
     .toLowerCase()
     .replace(/\s+/g, '-');
 const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
+const polygonPalette = ['#66bb6a', '#43a047', '#26a69a', '#5c6bc0', '#ef6c00'];
+
+const buildPolygonPath = (lot) => {
+  if (!lot || !lot.latitudes || !lot.longitudes) return [];
+  const keys = Object.keys(lot.latitudes);
+  if (!keys.length) return [];
+
+  return keys
+    .sort((a, b) => Number(a) - Number(b))
+    .map((key) => {
+      const latRaw = lot.latitudes[key];
+      const lngRaw = lot.longitudes[key];
+      const lat = typeof latRaw === 'number' ? latRaw : parseFloat(latRaw);
+      const lng = typeof lngRaw === 'number' ? lngRaw : parseFloat(lngRaw);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return null;
+      }
+      return { lat, lng };
+    })
+    .filter(Boolean);
+};
 
 const departmentViews = {
   'alta-verapaz': { center: { lat: 15.6, lng: -90.2 }, zoom: 8 },
@@ -36,43 +57,72 @@ const departmentViews = {
   zacapa: { center: { lat: 14.97, lng: -89.53 }, zoom: 9 }
 };
 
-function GeoPolygonMap({ selectedDepartment, selectedMunicipality, selectedLot }) {
+function GeoPolygonMap({
+  selectedDepartment,
+  selectedMunicipality,
+  selectedLot,
+  locations = [],
+  isLoadingLocations = false,
+  showSummary = true,
+  onToggleSummary
+}) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'terracontrol-admin-map',
     googleMapsApiKey: apiKey || '',
     libraries: ['drawing']
   });
-  const [drawnPolygons, setDrawnPolygons] = useState([]);
   const mapRef = useRef(null);
   const geocodeCache = useRef({});
+  const locationPolygons = useMemo(() => {
+    if (!Array.isArray(locations) || !locations.length) return [];
+    let colorIndex = 0;
+    return locations
+      .flatMap((location) => {
+        if (!Array.isArray(location?.lotes)) {
+          return [];
+        }
+        return location.lotes
+          .map((lot, idx) => {
+            const path = buildPolygonPath(lot);
+            if (!path.length) {
+              return null;
+            }
+            const color = polygonPalette[colorIndex % polygonPalette.length];
+            colorIndex += 1;
+            return {
+              id: `${location.id}-${lot.id_lote || idx}`,
+              finca: location.nombre,
+              lotName: lot.nombre_lote,
+              path,
+              color
+            };
+          })
+          .filter(Boolean);
+      })
+      .filter(Boolean);
+  }, [locations]);
 
-  const drawingManagerOptions = useMemo(() => {
-    if (!isLoaded || typeof window === 'undefined' || !window.google) return undefined;
-    return {
-      drawingMode: window.google.maps.drawing.OverlayType.POLYGON,
-      drawingControl: true,
-      drawingControlOptions: {
-        position: window.google.maps.ControlPosition.TOP_RIGHT,
-        drawingModes: [window.google.maps.drawing.OverlayType.POLYGON]
-      },
-      polygonOptions: {
-        fillColor: '#81c784',
-        fillOpacity: 0.35,
-        strokeColor: '#2e7d32',
-        strokeWeight: 2,
-        editable: true
-      }
-    };
-  }, [isLoaded]);
+  const fincasPreview = useMemo(() => {
+    if (!Array.isArray(locations) || !locations.length) return '';
+    const names = locations
+      .map((location) => location?.nombre)
+      .filter(Boolean);
+    if (!names.length) return '';
+    const preview = names.slice(0, 3).join(', ');
+    return names.length > 3 ? `${preview}…` : preview;
+  }, [locations]);
 
-  const handlePolygonComplete = (polygon) => {
-    const path = polygon.getPath().getArray().map((latLng) => ({
-      lat: latLng.lat(),
-      lng: latLng.lng()
-    }));
-    setDrawnPolygons((prev) => [...prev, path]);
-  };
+  const selectionContext = useMemo(() => {
+    return [
+      selectedLot || 'Sin finca seleccionada',
+      selectedMunicipality || 'Todos los municipios',
+      selectedDepartment || 'Todos los departamentos'
+    ].join(' · ');
+  }, [selectedLot, selectedMunicipality, selectedDepartment]);
+
+  const hasLocationData = Array.isArray(locations) && locations.length > 0;
+  const shouldShowSummary = showSummary && hasLocationData;
 
   useEffect(() => {
     if (!mapRef.current || !isLoaded || typeof window === 'undefined' || !window.google) return;
@@ -248,6 +298,9 @@ function GeoPolygonMap({ selectedDepartment, selectedMunicipality, selectedLot }
           zoom={7}
           onLoad={(map) => {
             mapRef.current = map;
+            if (map && window.google?.maps?.MapTypeId?.HYBRID) {
+              map.setMapTypeId(window.google.maps.MapTypeId.HYBRID);
+            }
           }}
           onUnmount={() => {
             mapRef.current = null;
@@ -258,31 +311,59 @@ function GeoPolygonMap({ selectedDepartment, selectedMunicipality, selectedLot }
             streetViewControl: false,
             fullscreenControl: false,
             mapTypeControl: false,
-            clickableIcons: false
+            clickableIcons: false,
+            mapTypeId: window.google?.maps?.MapTypeId?.HYBRID
           }}
         >
-          {drawingManagerOptions && (
-            <DrawingManager
-              options={drawingManagerOptions}
-              onPolygonComplete={handlePolygonComplete}
+          {locationPolygons.map((polygon) => (
+            <Polygon
+              key={polygon.id}
+              paths={polygon.path}
+              options={{
+                fillColor: polygon.color,
+                strokeColor: polygon.color,
+                fillOpacity: 0.25,
+                strokeOpacity: 0.85,
+                strokeWeight: 2,
+                clickable: false
+              }}
             />
-          )}
+          ))}
         </GoogleMap>
       ) : (
         <div className="geo-map__fallback">Cargando mapa...</div>
       )}
 
-      {drawnPolygons.length > 0 && (
+      {isLoadingLocations && (
+        <div className="geo-map__status-pill">Actualizando fincas...</div>
+      )}
+      {shouldShowSummary ? (
         <div className="geo-map__summary">
-          <p>
-            Polígonos trazados: <strong>{drawnPolygons.length}</strong>
-          </p>
-          <p className="geo-map__summary-context">
-            {selectedLot || 'Sin lote seleccionado'} ·{' '}
-            {selectedMunicipality || 'Todos los municipios'} ·{' '}
-            {selectedDepartment || 'Todos los departamentos'}
-          </p>
+          <button
+            type="button"
+            className="geo-map__summary-toggle"
+            onClick={() => onToggleSummary?.()}
+          >
+            Ocultar resumen
+          </button>
+          {hasLocationData && (
+            <>
+              <p>
+                Fincas encontradas: <strong>{locations.length}</strong>
+              </p>
+              {fincasPreview && <p className="geo-map__summary-context">{fincasPreview}</p>}
+            </>
+          )}
+          <p className="geo-map__summary-context">{selectionContext}</p>
         </div>
+      ) : (
+        <button
+          type="button"
+          className="geo-map__summary-toggle geo-map__summary-toggle--floating"
+          onClick={() => onToggleSummary?.()}
+        >
+          Mostrar resumen
+        </button>
       )}
     </div>
   );

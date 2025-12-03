@@ -545,6 +545,59 @@
   background: #f7fdf7;
 }
 
+.admin-dashboard__map-filters select {
+  border-radius: 999px;
+  border: 1px solid rgba(46, 125, 50, 0.35);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  background: #f7fdf7;
+  appearance: none;
+}
+
+.admin-dashboard__map-toggle {
+  border: 1px solid rgba(46, 125, 50, 0.45);
+  align-self: flex-end;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--tc-text-dark);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.admin-dashboard__map-toggle:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.admin-dashboard__map-toggle--floating {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 2;
+}
+
+.admin-dashboard__map-statuses {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-dashboard__map-status {
+  font-size: 0.85rem;
+  color: var(--tc-text-muted);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(46, 125, 50, 0.2);
+}
+
+.admin-dashboard__map-status--error {
+  color: #c62828;
+  border-color: rgba(198, 40, 40, 0.35);
+}
+
 .admin-dashboard__quadrant--requests {
   overflow: hidden;
 }
@@ -1090,9 +1143,22 @@
   color: var(--tc-text-muted);
 }
 
+.geo-map__status-pill {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(46, 125, 50, 0.3);
+  font-size: 0.8rem;
+  color: var(--tc-text-muted);
+  z-index: 2;
+}
+
 .geo-map__summary {
   position: absolute;
-  right: 1rem;
+  left: 1rem;
   bottom: 1rem;
   background: rgba(255, 255, 255, 0.95);
   padding: 0.75rem 1rem;
@@ -1107,4 +1173,27 @@
   margin: 0.35rem 0 0;
   color: var(--tc-text-muted);
   font-size: 0.8rem;
+}
+
+.geo-map__summary-toggle {
+  border: 1px solid rgba(46, 125, 50, 0.45);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--tc-text-dark);
+  border-radius: 999px;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.geo-map__summary-toggle:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.geo-map__summary-toggle--floating {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 2;
 }
