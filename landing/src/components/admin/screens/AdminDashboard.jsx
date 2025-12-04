@@ -57,6 +57,10 @@ const TOTAL_INVENTORY_VALUE = Object.values(LOT_SUMMARY).reduce(
   0
 );
 
+const MAX_SUMMARY_BARS = 6; // Mostrar hasta 6 barras individuales antes de agrupar en "Otros"
+const MAX_TICK_LABEL_LENGTH = 12; // Caracteres máximos por línea para los labels del eje X
+const MIN_OPERATIONAL_YEAR = 2024;
+
 const CHART_SORT_OPTIONS = [
   { value: 'amount-desc', label: 'Monto: mayor a menor' },
   { value: 'amount-asc', label: 'Monto: menor a mayor' },
@@ -71,6 +75,83 @@ const CHART_SORTERS = {
   'completed-desc': (a, b) => (b.completed - a.completed) || (b.amount - a.amount),
   'completed-asc': (a, b) => (a.completed - b.completed) || (a.amount - b.amount),
   alphabetical: (a, b) => a.label.localeCompare(b.label, 'es')
+};
+
+const parseJsonSafely = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return null;
+  }
+};
+
+const extractCostDataset = (payload) => {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (payload.body) {
+    if (typeof payload.body === 'string') {
+      const parsedBody = parseJsonSafely(payload.body);
+      if (parsedBody?.data && Array.isArray(parsedBody.data)) {
+        return parsedBody.data;
+      }
+    } else if (Array.isArray(payload.body.data)) {
+      return payload.body.data;
+    }
+  }
+  return [];
+};
+
+const normalizeCostRecords = (records = []) =>
+  records
+    .map((record) => {
+      const taskTypeId =
+        record?.taskTypeId !== undefined
+          ? String(record.taskTypeId)
+          : record?.tipo_tarea !== undefined
+            ? String(record.tipo_tarea)
+            : '';
+      return {
+        taskTypeId,
+        amount: Number(record?.costo_total ?? record?.amount ?? 0) || 0,
+        completed: Number(record?.cantidad_tareas ?? record?.completed ?? 0) || 0
+      };
+    })
+    .filter((record) => record.taskTypeId);
+
+const getLocationId = (location) => {
+  if (!location) return '';
+  const rawId =
+    location?.id_finca ??
+    location?.id ??
+    location?.fincaId ??
+    location?.finca_id ??
+    (typeof location?.idFinca !== 'undefined' ? location.idFinca : undefined);
+  return rawId === undefined || rawId === null || rawId === '' ? '' : String(rawId);
+};
+
+const formatTickLabel = (label) => {
+  if (typeof label !== 'string') return label;
+  if (label.length <= MAX_TICK_LABEL_LENGTH) return label;
+  const words = label.split(' ');
+  const lines = [];
+  let currentLine = '';
+  words.forEach((word) => {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    if (candidate.length > MAX_TICK_LABEL_LENGTH && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = candidate;
+    }
+  });
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  return lines;
 };
 
 const DASHBOARD_MENU_OPTIONS = [
@@ -549,66 +630,68 @@ function AdminDashboard() {
   const [showMapFilters, setShowMapFilters] = useState(true);
   const [showMapSummary, setShowMapSummary] = useState(true);
   const availableYears = useMemo(() => {
-    const years = new Set();
-    mockTaskPerformance.forEach((entry) => {
-      const { year } = getDateParts(entry.date);
-      if (year) {
-        years.add(year);
-      }
-    });
-    return Array.from(years).sort().reverse();
+    const currentYear = new Date().getFullYear();
+    const start = Math.min(currentYear, MIN_OPERATIONAL_YEAR);
+    const years = [];
+    for (let year = currentYear; year >= start; year -= 1) {
+      years.push(String(year));
+    }
+    if (!years.includes(String(MIN_OPERATIONAL_YEAR))) {
+      years.push(String(MIN_OPERATIONAL_YEAR));
+    }
+    return years;
   }, []);
-  const [selectedYearFilter, setSelectedYearFilter] = useState(() => availableYears[0] || '');
+  const [selectedYearFilter, setSelectedYearFilter] = useState(() => String(new Date().getFullYear()));
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('todos');
   const [selectedDayFilter, setSelectedDayFilter] = useState('todos');
   const [selectedSortOption, setSelectedSortOption] = useState('amount-desc');
+  const [operationalCosts, setOperationalCosts] = useState([]);
+  const [operationalCostsLoading, setOperationalCostsLoading] = useState(false);
+  const [operationalCostsError, setOperationalCostsError] = useState('');
   const availableMonths = useMemo(() => {
-    const months = new Set();
-    mockTaskPerformance.forEach((entry) => {
-      const { year, month } = getDateParts(entry.date);
-      if (year === selectedYearFilter && month) {
-        months.add(month);
-      }
-    });
-    return Array.from(months).sort();
-  }, [selectedYearFilter]);
+    return Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'));
+  }, []);
   const availableDays = useMemo(() => {
     if (selectedMonthFilter === 'todos') return [];
-    const days = new Set();
-    mockTaskPerformance.forEach((entry) => {
-      const { year, month, day } = getDateParts(entry.date);
-      if (year === selectedYearFilter && month === selectedMonthFilter && day) {
-        days.add(day);
-      }
-    });
-    return Array.from(days).sort();
+    const year = Number(selectedYearFilter) || new Date().getFullYear();
+    const month = Number(selectedMonthFilter);
+    if (!month || month < 1 || month > 12) return [];
+    const daysInMonth = new Date(year, month, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, index) => String(index + 1).padStart(2, '0'));
   }, [selectedYearFilter, selectedMonthFilter]);
-  const filteredOperationalData = useMemo(
-    () =>
-      mockTaskPerformance.filter((entry) => {
-        const { year, month, day } = getDateParts(entry.date);
-        if (!selectedYearFilter || year !== selectedYearFilter) return false;
-        if (selectedMonthFilter !== 'todos' && month !== selectedMonthFilter) return false;
-        if (selectedDayFilter !== 'todos' && day !== selectedDayFilter) return false;
-        return true;
-      }),
-    [selectedYearFilter, selectedMonthFilter, selectedDayFilter]
+  const shouldFilterByFincas = Boolean(
+    selectedLotId || selectedDepartmentId || selectedMunicipalityId
   );
+  const fincaIdsForFilters = useMemo(() => {
+    if (!shouldFilterByFincas) return [];
+    if (selectedLotId) {
+      return [String(selectedLotId)];
+    }
+    const records = Array.isArray(locationsData) ? locationsData : [];
+    const ids = records
+      .map((location) => getLocationId(location))
+      .filter((id) => Boolean(id));
+    return Array.from(new Set(ids));
+  }, [shouldFilterByFincas, selectedLotId, locationsData]);
+  const fincaQueryParam = useMemo(() => fincaIdsForFilters.join(','), [fincaIdsForFilters]);
   const aggregatedTaskMetrics = useMemo(() => {
     const totals = taskTypes.reduce((acc, type) => {
       acc[type.id] = { amount: 0, completed: 0 };
       return acc;
     }, {});
-    filteredOperationalData.forEach((entry) => {
-      taskTypes.forEach((type) => {
-        const values = entry.tasks[type.id];
-        if (!values) return;
-        totals[type.id].amount += values.amount;
-        totals[type.id].completed += values.completed;
-      });
+
+    operationalCosts.forEach((record) => {
+      const key = record?.taskTypeId;
+      if (!key) return;
+      if (!totals[key]) {
+        totals[key] = { amount: 0, completed: 0 };
+      }
+      totals[key].amount += record.amount || 0;
+      totals[key].completed += record.completed || 0;
     });
+
     return totals;
-  }, [filteredOperationalData]);
+  }, [operationalCosts]);
   const { totalAmount, totalCompleted } = useMemo(() => {
     return taskTypes.reduce(
       (acc, type) => {
@@ -628,11 +711,11 @@ function AdminDashboard() {
     }));
     const sorter = CHART_SORTERS[selectedSortOption] || CHART_SORTERS['amount-desc'];
     const sorted = [...dataPoints].sort(sorter);
-    if (sorted.length <= 4) {
+    if (sorted.length <= MAX_SUMMARY_BARS) {
       return sorted;
     }
-    const topFour = sorted.slice(0, 4);
-    const remaining = sorted.slice(4);
+    const topEntries = sorted.slice(0, MAX_SUMMARY_BARS);
+    const remaining = sorted.slice(MAX_SUMMARY_BARS);
     const aggregatedOthers = remaining.reduce(
       (acc, entry) => {
         acc.amount += entry.amount;
@@ -648,7 +731,7 @@ function AdminDashboard() {
       { amount: 0, completed: 0, breakdown: [] }
     );
     return [
-      ...topFour,
+      ...topEntries,
       {
         id: 'others',
         label: 'Otros',
@@ -660,7 +743,7 @@ function AdminDashboard() {
       }
     ];
   }, [aggregatedTaskMetrics, selectedSortOption]);
-  const hasOperationalData = filteredOperationalData.length > 0;
+  const hasOperationalData = operationalCosts.length > 0;
   const selectedPeriodLabel = useMemo(() => {
     if (!selectedYearFilter) return 'Selecciona un año para visualizar los datos.';
     if (selectedMonthFilter === 'todos') {
@@ -736,7 +819,12 @@ function AdminDashboard() {
           x: {
             ticks: {
               color: 'var(--tc-text-muted)',
-              maxRotation: 0
+              maxRotation: 0,
+              autoSkip: false, // mostrar todas las etiquetas de categoría
+              callback(value) {
+                const label = this.getLabelForValue(value);
+                return formatTickLabel(label);
+              }
             },
             grid: {
               display: false
@@ -766,10 +854,16 @@ function AdminDashboard() {
 
   const fincaOptions = useMemo(
     () =>
-      (Array.isArray(locationsData) ? locationsData : []).map((location) => ({
-        id: String(location.id),
-        name: location.nombre || `Finca ${location.id}`
-      })),
+      (Array.isArray(locationsData) ? locationsData : [])
+        .map((location) => {
+          const id = getLocationId(location);
+          if (!id) return null;
+          return {
+            id,
+            name: location.nombre || `Finca ${id}`
+          };
+        })
+        .filter(Boolean),
     [locationsData]
   );
 
@@ -822,6 +916,80 @@ function AdminDashboard() {
       cancelled = true;
     };
   }, [selectedDepartmentName, selectedMunicipalityName, selectedLotId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchOperationalCosts = async () => {
+      const requiresLocationFilter =
+        !selectedLotId && (selectedDepartmentId || selectedMunicipalityId);
+
+      if (requiresLocationFilter && locationsLoading) {
+        setOperationalCostsError('');
+        setOperationalCostsLoading(true);
+        return;
+      }
+
+      if (shouldFilterByFincas && !fincaQueryParam) {
+        if (!requiresLocationFilter || !locationsLoading) {
+          setOperationalCostsLoading(false);
+          setOperationalCosts([]);
+          setOperationalCostsError('No se encontraron fincas para los filtros seleccionados.');
+        }
+        return;
+      }
+
+      setOperationalCostsLoading(true);
+      setOperationalCostsError('');
+      const query = {};
+      if (selectedYearFilter) {
+        query.year = selectedYearFilter;
+      }
+      if (selectedMonthFilter !== 'todos') {
+        query.month = selectedMonthFilter;
+      }
+      if (selectedDayFilter !== 'todos') {
+        query.day = selectedDayFilter;
+      }
+      if (fincaQueryParam) {
+        query.finca = fincaQueryParam;
+      }
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/costs', {
+          query
+        });
+        if (cancelled) return;
+        const rawRecords = extractCostDataset(payload);
+        const normalized = normalizeCostRecords(rawRecords);
+        setOperationalCosts(normalized);
+      } catch (error) {
+        if (cancelled) return;
+        setOperationalCosts([]);
+        setOperationalCostsError(error.message || 'No se pudo cargar el resumen operativo.');
+      } finally {
+        if (!cancelled) {
+          setOperationalCostsLoading(false);
+        }
+      }
+    };
+
+    fetchOperationalCosts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedYearFilter,
+    selectedMonthFilter,
+    selectedDayFilter,
+    selectedLotId,
+    selectedDepartmentId,
+    selectedMunicipalityId,
+    shouldFilterByFincas,
+    fincaQueryParam,
+    locationsLoading
+  ]);
   const kpiHighlights = useMemo(() => {
     const lotSummary = LOT_SUMMARY[selectedLotId];
     const lotCount = selectedLotId ? 1 : fincaOptions.length || lotNames.length || 1;
@@ -1641,17 +1809,22 @@ function AdminDashboard() {
               </div>
             </div>
             <div className="admin-dashboard__chart">
-              {chartData.length ? (
+              {operationalCostsLoading ? (
+                <p className="admin-dashboard__chart-empty">Cargando resumen operativo...</p>
+              ) : chartData.length ? (
                 <div className="admin-dashboard__chart-canvas">
                   <Bar data={operationalBarChart.data} options={operationalBarChart.options} />
                 </div>
               ) : (
                 <p className="admin-dashboard__chart-empty">Sin datos para este periodo.</p>
               )}
+              {operationalCostsError && (
+                <p className="admin-dashboard__chart-empty">{operationalCostsError}</p>
+              )}
               <p className="admin-dashboard__chart-caption">
                 {hasOperationalData
                   ? selectedPeriodLabel
-                  : 'No hay datos simulados para este periodo.'}
+                  : 'No hay datos disponibles para este periodo.'}
               </p>
             </div>
           </section>
@@ -1663,7 +1836,7 @@ function AdminDashboard() {
               <p>
                 {selectedLotName
                   ? `Contexto financiero para ${selectedLotName}`
-                  : 'Promedios consolidados de las fincas simuladas'}
+                  : 'Promedios consolidados de las fincas monitoreadas'}
               </p>
             </div>
             <div className="admin-dashboard__kpi-grid">
