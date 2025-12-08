@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Script para facilitar la ejecución de comandos Docker
 
 set -e
