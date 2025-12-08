@@ -140,3 +140,33 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# ================== PRODUCCIÓN ==================
+# Certificados SSL (NUNCA guardar en git)
+nginx/ssl/
+nginx/ssl/**
+*.key
+*.crt
+*.pem
+
+# Variables de entorno de producción
+.env.production
+.env.production.local
+.env.*.production
+
+# Archivos de Docker
+docker-compose.override.yml
+
+# Bases de datos
+postgres-data/
+*.db
+*.sqlite
+
+# Backups
+backups/
+dumps/
+*.dump
+
+# Logs de producción
+logs/
+*.log.gz
