@@ -28,7 +28,7 @@ services:
     environment:
       DATABASE_URL: postgresql://terra:terra@db:5432/terracontrol?schema=public
       PORT: 5174
-      CORS_ORIGIN: http://localhost,http://terracontrolgt.com,http://www.terracontrolgt.com
+      CORS_ORIGIN: http://localhost,http://127.0.0.1,http://terracontrolgt.com,http://www.terracontrolgt.com,http://18.118.36.210
       NODE_ENV: production
     depends_on:
       db:
