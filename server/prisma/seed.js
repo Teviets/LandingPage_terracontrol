@@ -3,10 +3,12 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
-  const existing = await prisma.contactRequest.count();
+  console.log('🌱 Starting seed...');
 
-  if (existing > 0) {
-    console.log('Contact requests table already seeded.');
+  // Seed contact requests
+  const existingRequests = await prisma.contactRequest.count();
+  if (existingRequests > 0) {
+    console.log('✓ Contact requests already seeded.');
   } else {
     await prisma.contactRequest.createMany({
       data: [
@@ -22,37 +24,37 @@ async function main() {
         }
       ]
     });
-
-    console.log('Contact requests seed data inserted.');
+    console.log('✓ Contact requests seeded.');
   }
 
-  await prisma.user.createMany({
-    data: [
-      {
-        username: 'gabrielCAdmin',
-        password: 'TerraControl!2026',
-        hasFullAccess: 1
-      },
-      {
-        username: 'JavierMAmin',
-        password: 'TerraControl!2026',
-        hasFullAccess: 1
-      },
-      {
-        username: 'SebasEDev',
-        password: 'TerraControl!2026',
-        hasFullAccess: 1
-      }
-    ],
-    skipDuplicates: true
-  });
+  // Seed users - check for each one individually
+  const users = [
+    { username: 'gabrielCAdmin', password: 'TerraControl!2026', hasFullAccess: 1 },
+    { username: 'JavierMAmin', password: 'TerraControl!2026', hasFullAccess: 1 },
+    { username: 'SebasEDev', password: 'TerraControl!2026', hasFullAccess: 1 }
+  ];
 
-  console.log('User seed data inserted.');
+  for (const user of users) {
+    const existing = await prisma.user.findUnique({
+      where: { username: user.username }
+    });
+
+    if (existing) {
+      console.log(`✓ User ${user.username} already exists.`);
+    } else {
+      await prisma.user.create({
+        data: user
+      });
+      console.log(`✓ User ${user.username} created.`);
+    }
+  }
+
+  console.log('✓ Seed completed successfully!');
 }
 
 main()
   .catch((error) => {
-    console.error(error);
+    console.error('❌ Seed error:', error);
     process.exit(1);
   })
   .finally(async () => {
