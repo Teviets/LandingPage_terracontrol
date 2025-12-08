@@ -29,7 +29,7 @@ async function main() {
   await prisma.user.createMany({
     data: [
       {
-        username: 'gabrilCAdmin',
+        username: 'gabrielCAdmin',
         password: 'TerraControl!2026',
         hasFullAccess: 1
       },
