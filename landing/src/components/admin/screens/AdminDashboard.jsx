@@ -122,6 +122,162 @@ const normalizeCostRecords = (records = []) =>
     })
     .filter((record) => record.taskTypeId);
 
+const extractHarvestDataset = (payload) => {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (payload.body) {
+    if (typeof payload.body === 'string') {
+      const parsedBody = parseJsonSafely(payload.body);
+      if (parsedBody?.data && Array.isArray(parsedBody.data)) {
+        return parsedBody.data;
+      }
+    } else if (Array.isArray(payload.body.data)) {
+      return payload.body.data;
+    }
+  }
+  return [];
+};
+
+const normalizeHarvestRecords = (records = []) =>
+  records
+    .map((record) => ({
+      id: record?.id ? String(record.id) : undefined,
+      name: record?.nombre_cosecha || record?.nombre || 'Cosecha sin nombre',
+      date: record?.fecha_cosecha || record?.fecha || null,
+      fincaId:
+        record?.id_finca ??
+        record?.fincaId ??
+        record?.finca_id ??
+        (typeof record?.idFinca !== 'undefined' ? record.idFinca : null)
+    }))
+    .filter((record) => record.id && record.fincaId);
+
+const buildHarvestOptionLabel = (harvest) => {
+  if (!harvest) return '';
+  const fincaLabel =
+    harvest.fincaId === undefined || harvest.fincaId === null
+      ? 'Finca sin ID'
+      : `Finca #${harvest.fincaId}`;
+  return `${harvest.name} — ${fincaLabel}`;
+};
+
+const extractAvgPersonalDataset = (payload) => {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (payload.body) {
+    if (typeof payload.body === 'string') {
+      const parsed = parseJsonSafely(payload.body);
+      if (parsed?.data && Array.isArray(parsed.data)) {
+        return parsed.data;
+      }
+    } else if (Array.isArray(payload.body.data)) {
+      return payload.body.data;
+    }
+  }
+  return [];
+};
+
+const normalizeAvgPersonalRecords = (records = []) =>
+  records
+    .map((record) => {
+      const taskTypeId =
+        record?.taskTypeId !== undefined
+          ? String(record.taskTypeId)
+          : record?.tipo_tarea !== undefined
+            ? String(record.tipo_tarea)
+            : '';
+      const taskCount = Number(record?.cantidad_tareas ?? record?.taskCount ?? 0) || 0;
+      const averagePersonnel =
+        Number(record?.promedio_personal ?? record?.avg_personal ?? record?.avgPersonal ?? 0) || 0;
+      return { taskTypeId, taskCount, averagePersonnel };
+    })
+    .filter((record) => record.taskTypeId);
+
+const isWorkforceSummaryShape = (value) => {
+  if (!value || Array.isArray(value) || typeof value !== 'object') {
+    return false;
+  }
+  return (
+    Object.prototype.hasOwnProperty.call(value, 'total_colaboradores') ||
+    Object.prototype.hasOwnProperty.call(value, 'totalColaboradores') ||
+    Object.prototype.hasOwnProperty.call(value, 'en_planilla') ||
+    Object.prototype.hasOwnProperty.call(value, 'enPlanilla') ||
+    Object.prototype.hasOwnProperty.call(value, 'hombres') ||
+    Object.prototype.hasOwnProperty.call(value, 'mujeres')
+  );
+};
+
+const extractWorkforceSummary = (payload) => {
+  const tryExtract = (candidate) => {
+    if (isWorkforceSummaryShape(candidate)) {
+      return candidate;
+    }
+    if (candidate?.data && isWorkforceSummaryShape(candidate.data)) {
+      return candidate.data;
+    }
+    return null;
+  };
+
+  if (!payload) {
+    return null;
+  }
+
+  const direct = tryExtract(payload);
+  if (direct) return direct;
+
+  if (payload.body) {
+    if (typeof payload.body === 'string') {
+      const parsed = parseJsonSafely(payload.body);
+      const extracted = tryExtract(parsed);
+      if (extracted) return extracted;
+    } else {
+      const extracted = tryExtract(payload.body);
+      if (extracted) return extracted;
+    }
+  }
+
+  if (payload.data) {
+    const extracted = tryExtract(payload.data);
+    if (extracted) return extracted;
+  }
+
+  return null;
+};
+
+const normalizeWorkforceSummary = (summary) => {
+  if (!summary) return null;
+  const toNumber = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  };
+
+  const onPayroll = toNumber(summary.en_planilla ?? summary.enPlanilla ?? summary.planilla);
+  const offPayroll = toNumber(summary.fuera_planilla ?? summary.fueraPlanilla ?? summary.fuera);
+  const men = toNumber(summary.hombres ?? summary.masculino ?? summary.men);
+  const women = toNumber(summary.mujeres ?? summary.femenino ?? summary.women);
+  const unknownGender = toNumber(summary.otros ?? summary.otrosGeneros ?? summary.otros_generos);
+  const total =
+    toNumber(
+      summary.total_colaboradores ??
+        summary.totalColaboradores ??
+        summary.totalPersonal ??
+        summary.total
+    ) ||
+    onPayroll + offPayroll ||
+    men + women + unknownGender;
+
+  return {
+    totalPersonnel: total,
+    onPayroll,
+    offPayroll,
+    men,
+    women,
+    unknownGender
+  };
+};
+
 const getLocationId = (location) => {
   if (!location) return '';
   const rawId =
@@ -627,6 +783,26 @@ function AdminDashboard() {
   const [locationsData, setLocationsData] = useState([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const [locationsError, setLocationsError] = useState('');
+  const [workforceSummary, setWorkforceSummary] = useState(null);
+  const [workforceLoading, setWorkforceLoading] = useState(false);
+  const [workforceError, setWorkforceError] = useState('');
+  const [harvestCatalog, setHarvestCatalog] = useState([]);
+  const [harvestCatalogLoading, setHarvestCatalogLoading] = useState(false);
+  const [harvestCatalogError, setHarvestCatalogError] = useState('');
+  const [harvestSearchInput, setHarvestSearchInput] = useState('');
+  const [selectedHarvestIds, setSelectedHarvestIds] = useState([]);
+  const [avgPersonalTaskData, setAvgPersonalTaskData] = useState([]);
+  const [avgPersonalLoading, setAvgPersonalLoading] = useState(false);
+  const [avgPersonalError, setAvgPersonalError] = useState('');
+  const [financialKpis, setFinancialKpis] = useState(null);
+  const [financialKpisLoading, setFinancialKpisLoading] = useState(false);
+  const [financialKpisError, setFinancialKpisError] = useState('');
+  const [salesData, setSalesData] = useState(null);
+  const [salesDataLoading, setSalesDataLoading] = useState(false);
+  const [salesDataError, setSalesDataError] = useState('');
+  const [inventoryData, setInventoryData] = useState(null);
+  const [inventoryDataLoading, setInventoryDataLoading] = useState(false);
+  const [inventoryDataError, setInventoryDataError] = useState('');
   const [showMapFilters, setShowMapFilters] = useState(true);
   const [showMapSummary, setShowMapSummary] = useState(true);
   const availableYears = useMemo(() => {
@@ -673,7 +849,22 @@ function AdminDashboard() {
       .filter((id) => Boolean(id));
     return Array.from(new Set(ids));
   }, [shouldFilterByFincas, selectedLotId, locationsData]);
+  const hasSelectedHarvests = selectedHarvestIds.length > 0;
   const fincaQueryParam = useMemo(() => fincaIdsForFilters.join(','), [fincaIdsForFilters]);
+  const harvestOptions = useMemo(
+    () =>
+      (Array.isArray(harvestCatalog) ? harvestCatalog : []).map((entry) => ({
+        id: entry.id,
+        label: buildHarvestOptionLabel(entry)
+      })),
+    [harvestCatalog]
+  );
+  const selectedHarvestEntries = useMemo(() => {
+    if (!selectedHarvestIds.length) return [];
+    return selectedHarvestIds
+      .map((id) => harvestCatalog.find((entry) => entry.id === id))
+      .filter(Boolean);
+  }, [selectedHarvestIds, harvestCatalog]);
   const aggregatedTaskMetrics = useMemo(() => {
     const totals = taskTypes.reduce((acc, type) => {
       acc[type.id] = { amount: 0, completed: 0 };
@@ -954,6 +1145,9 @@ function AdminDashboard() {
       if (fincaQueryParam) {
         query.finca = fincaQueryParam;
       }
+      if (hasSelectedHarvests) {
+        query.cosecha = selectedHarvestIds.join(',');
+      }
 
       try {
         const payload = await externalApiClient.get('/dashboard/costs', {
@@ -981,8 +1175,134 @@ function AdminDashboard() {
     };
   }, [
     selectedYearFilter,
-    selectedMonthFilter,
-    selectedDayFilter,
+      selectedMonthFilter,
+      selectedDayFilter,
+      selectedLotId,
+      selectedDepartmentId,
+      selectedMunicipalityId,
+      shouldFilterByFincas,
+      fincaQueryParam,
+      locationsLoading,
+      hasSelectedHarvests,
+      selectedHarvestIds
+    ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchHarvestCatalog = async () => {
+      const requiresLocationFilter =
+        shouldFilterByFincas && !selectedLotId && (selectedDepartmentId || selectedMunicipalityId);
+
+      if (requiresLocationFilter && locationsLoading) {
+        setHarvestCatalogLoading(true);
+        setHarvestCatalogError('');
+        return;
+      }
+
+      if (shouldFilterByFincas && !fincaQueryParam) {
+        if (!requiresLocationFilter || !locationsLoading) {
+          setHarvestCatalog([]);
+          setHarvestCatalogLoading(false);
+          setHarvestCatalogError('No se encontraron fincas para cargar las cosechas.');
+        }
+        return;
+      }
+
+      setHarvestCatalogLoading(true);
+      setHarvestCatalogError('');
+      const query = {};
+      if (shouldFilterByFincas && fincaQueryParam) {
+        query.idFinca = fincaQueryParam;
+      }
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/cosecha', Object.keys(query).length ? { query } : undefined);
+        if (cancelled) return;
+        const normalized = normalizeHarvestRecords(extractHarvestDataset(payload));
+        setHarvestCatalog(normalized);
+      } catch (error) {
+        if (cancelled) return;
+        setHarvestCatalog([]);
+        setHarvestCatalogError(error.message || 'No se pudo cargar el catálogo de cosechas.');
+      } finally {
+        if (!cancelled) {
+          setHarvestCatalogLoading(false);
+        }
+      }
+    };
+
+    fetchHarvestCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    shouldFilterByFincas,
+    fincaQueryParam,
+    locationsLoading,
+    selectedLotId,
+    selectedDepartmentId,
+    selectedMunicipalityId
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchWorkforceSummary = async () => {
+      const requiresLocationFilter =
+        !selectedLotId && (selectedDepartmentId || selectedMunicipalityId);
+
+      if (requiresLocationFilter && locationsLoading) {
+        setWorkforceLoading(true);
+        setWorkforceError('');
+        return;
+      }
+
+      if (shouldFilterByFincas && !fincaQueryParam) {
+        if (!requiresLocationFilter || !locationsLoading) {
+          setWorkforceSummary(null);
+          setWorkforceLoading(false);
+          setWorkforceError('No se encontraron fincas para los filtros seleccionados.');
+        }
+        return;
+      }
+
+      setWorkforceLoading(true);
+      setWorkforceError('');
+
+      const query = {};
+      if (fincaQueryParam) {
+        query.idFinca = fincaQueryParam;
+      }
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/personal', { query });
+        if (cancelled) return;
+        const normalizedSummary = normalizeWorkforceSummary(extractWorkforceSummary(payload));
+        if (!normalizedSummary) {
+          setWorkforceSummary(null);
+          setWorkforceError('No se encontraron datos de personal para los filtros aplicados.');
+        } else {
+          setWorkforceSummary(normalizedSummary);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setWorkforceSummary(null);
+        setWorkforceError(error.message || 'No se pudo cargar el resumen del personal.');
+      } finally {
+        if (!cancelled) {
+          setWorkforceLoading(false);
+        }
+      }
+    };
+
+    fetchWorkforceSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
     selectedLotId,
     selectedDepartmentId,
     selectedMunicipalityId,
@@ -990,7 +1310,405 @@ function AdminDashboard() {
     fincaQueryParam,
     locationsLoading
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchAveragePersonal = async () => {
+      const requiresLocationFilter =
+        !selectedLotId && (selectedDepartmentId || selectedMunicipalityId);
+
+      if (requiresLocationFilter && locationsLoading) {
+        setAvgPersonalLoading(true);
+        setAvgPersonalError('');
+        return;
+      }
+
+      if (shouldFilterByFincas && !fincaQueryParam) {
+        if (!requiresLocationFilter || !locationsLoading) {
+          setAvgPersonalTaskData([]);
+          setAvgPersonalLoading(false);
+          setAvgPersonalError('No se encontraron fincas para calcular el promedio de personal.');
+        }
+        return;
+      }
+
+      setAvgPersonalLoading(true);
+      setAvgPersonalError('');
+      const query = {};
+      if (fincaQueryParam) {
+        query.finca = fincaQueryParam;
+      }
+      if (hasSelectedHarvests) {
+        query.cosecha = selectedHarvestIds.join(',');
+      }
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/avgPersonal', {
+          query
+        });
+        if (cancelled) return;
+        const normalized = normalizeAvgPersonalRecords(extractAvgPersonalDataset(payload));
+        setAvgPersonalTaskData(normalized);
+      } catch (error) {
+        if (cancelled) return;
+        setAvgPersonalTaskData([]);
+        setAvgPersonalError(error.message || 'No se pudo obtener el promedio de personal.');
+      } finally {
+        if (!cancelled) {
+          setAvgPersonalLoading(false);
+        }
+      }
+    };
+
+    fetchAveragePersonal();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedLotId,
+    selectedDepartmentId,
+    selectedMunicipalityId,
+    shouldFilterByFincas,
+    fincaQueryParam,
+    locationsLoading,
+    hasSelectedHarvests,
+    selectedHarvestIds
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchFinancialKpis = async () => {
+      const requiresLocationFilter =
+        !selectedLotId && (selectedDepartmentId || selectedMunicipalityId);
+
+      if (requiresLocationFilter && locationsLoading) {
+        setFinancialKpisLoading(true);
+        setFinancialKpisError('');
+        return;
+      }
+
+      if (shouldFilterByFincas && !fincaQueryParam) {
+        if (!requiresLocationFilter || !locationsLoading) {
+          setFinancialKpis(null);
+          setFinancialKpisLoading(false);
+          setFinancialKpisError('No se encontraron fincas para calcular los KPIs financieros.');
+        }
+        return;
+      }
+
+      setFinancialKpisLoading(true);
+      setFinancialKpisError('');
+      
+      const query = {};
+      if (fincaQueryParam) {
+        query.finca = fincaQueryParam;
+      }
+      if (hasSelectedHarvests) {
+        query.cosecha = selectedHarvestIds.join(',');
+      }
+      if (selectedYearFilter && selectedYearFilter !== 'todos') {
+        query.year = selectedYearFilter;
+      }
+      if (selectedMonthFilter && selectedMonthFilter !== 'todos') {
+        query.month = selectedMonthFilter;
+      }
+      if (selectedDayFilter && selectedDayFilter !== 'todos') {
+        query.day = selectedDayFilter;
+      }
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/KPI', {
+          query
+        });
+        if (cancelled) return;
+        
+        let kpiData = null;
+        if (payload?.body) {
+          if (typeof payload.body === 'string') {
+            const parsed = parseJsonSafely(payload.body);
+            kpiData = parsed?.data || null;
+          } else {
+            kpiData = payload.body?.data || payload.data || null;
+          }
+        } else {
+          kpiData = payload?.data || null;
+        }
+        
+        setFinancialKpis(kpiData);
+      } catch (error) {
+        if (cancelled) return;
+        setFinancialKpis(null);
+        setFinancialKpisError(error.message || 'No se pudieron obtener los KPIs financieros.');
+      } finally {
+        if (!cancelled) {
+          setFinancialKpisLoading(false);
+        }
+      }
+    };
+
+    fetchFinancialKpis();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedLotId,
+    selectedDepartmentId,
+    selectedMunicipalityId,
+    shouldFilterByFincas,
+    fincaQueryParam,
+    locationsLoading,
+    hasSelectedHarvests,
+    selectedHarvestIds,
+    selectedYearFilter,
+    selectedMonthFilter,
+    selectedDayFilter
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchSalesData = async () => {
+      const requiresLocationFilter =
+        !selectedLotId && (selectedDepartmentId || selectedMunicipalityId);
+
+      if (requiresLocationFilter && locationsLoading) {
+        setSalesDataLoading(true);
+        setSalesDataError('');
+        return;
+      }
+
+      if (shouldFilterByFincas && !fincaQueryParam) {
+        if (!requiresLocationFilter || !locationsLoading) {
+          setSalesData(null);
+          setSalesDataLoading(false);
+          setSalesDataError('No se encontraron fincas para obtener datos de ventas.');
+        }
+        return;
+      }
+
+      setSalesDataLoading(true);
+      setSalesDataError('');
+      
+      const query = {};
+      if (fincaQueryParam) {
+        query.finca = fincaQueryParam;
+      }
+      if (hasSelectedHarvests) {
+        query.cosecha = selectedHarvestIds.join(',');
+      }
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/saleinfo', {
+          query
+        });
+        if (cancelled) return;
+        
+        let salesInfo = null;
+        if (payload?.body) {
+          if (typeof payload.body === 'string') {
+            const parsed = parseJsonSafely(payload.body);
+            salesInfo = parsed?.data || null;
+          } else {
+            salesInfo = payload.body?.data || payload.data || null;
+          }
+        } else {
+          salesInfo = payload?.data || null;
+        }
+        
+        setSalesData(salesInfo);
+      } catch (error) {
+        if (cancelled) return;
+        setSalesData(null);
+        setSalesDataError(error.message || 'No se pudieron obtener los datos de ventas.');
+      } finally {
+        if (!cancelled) {
+          setSalesDataLoading(false);
+        }
+      }
+    };
+
+    fetchSalesData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedLotId,
+    selectedDepartmentId,
+    selectedMunicipalityId,
+    shouldFilterByFincas,
+    fincaQueryParam,
+    locationsLoading,
+    hasSelectedHarvests,
+    selectedHarvestIds,
+    selectedYearFilter,
+    selectedMonthFilter,
+    selectedDayFilter
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchInventoryData = async () => {
+      const requiresLocationFilter =
+        !selectedLotId && (selectedDepartmentId || selectedMunicipalityId);
+
+      if (requiresLocationFilter && locationsLoading) {
+        setInventoryDataLoading(true);
+        setInventoryDataError('');
+        return;
+      }
+
+      if (shouldFilterByFincas && !fincaQueryParam) {
+        if (!requiresLocationFilter || !locationsLoading) {
+          setInventoryData(null);
+          setInventoryDataLoading(false);
+          setInventoryDataError('No se encontraron fincas para obtener datos de inventario.');
+        }
+        return;
+      }
+
+      setInventoryDataLoading(true);
+      setInventoryDataError('');
+      
+      const query = {};
+      if (fincaQueryParam) {
+        query.finca = fincaQueryParam;
+      }
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/inventary', {
+          query
+        });
+        if (cancelled) return;
+        
+        let inventoryInfo = null;
+        if (payload?.body) {
+          if (typeof payload.body === 'string') {
+            const parsed = parseJsonSafely(payload.body);
+            inventoryInfo = parsed?.data || null;
+          } else {
+            inventoryInfo = payload.body?.data || payload.data || null;
+          }
+        } else {
+          inventoryInfo = payload?.data || null;
+        }
+        
+        setInventoryData(inventoryInfo);
+      } catch (error) {
+        if (cancelled) return;
+        setInventoryData(null);
+        setInventoryDataError(error.message || 'No se pudieron obtener los datos de inventario.');
+      } finally {
+        if (!cancelled) {
+          setInventoryDataLoading(false);
+        }
+      }
+    };
+
+    fetchInventoryData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedLotId,
+    selectedDepartmentId,
+    selectedMunicipalityId,
+    shouldFilterByFincas,
+    fincaQueryParam,
+    locationsLoading
+  ]);
+
   const kpiHighlights = useMemo(() => {
+    // Si tenemos datos del API y no estamos cargando, usarlos
+    if (financialKpis && !financialKpisLoading) {
+      const safeCostPerTask = parseFloat(financialKpis.costo_promedio_tarea) || 0;
+      const safeCostPerLot = parseFloat(financialKpis.costo_promedio_finca) || 0;
+      const safeCostPerHectare = parseFloat(financialKpis.costo_promedio_hectarea) || 0;
+      const safeAverageCostInventory = parseFloat(financialKpis.costo_promedio_real_inventario) || 0;
+
+      return [
+        {
+          label: 'Costo por tarea',
+          value: formatCurrency(safeCostPerTask, { maximumFractionDigits: 2 }),
+          helper: 'Desde datos operacionales'
+        },
+        {
+          label: 'Costo promedio por finca',
+          value: formatCurrency(safeCostPerLot, { maximumFractionDigits: 2 }),
+          helper: 'Desde datos operacionales'
+        },
+        {
+          label: 'Costo promedio por hectárea',
+          value: formatCurrency(safeCostPerHectare, { maximumFractionDigits: 2 }),
+          helper: 'Desde datos operacionales'
+        },
+        {
+          label: 'Costo promedio inventario',
+          value: formatCurrency(safeAverageCostInventory, { maximumFractionDigits: 2 }),
+          helper: 'Desde inventario registrado'
+        }
+      ];
+    }
+
+    // Si está cargando, mostrar indicador de carga
+    if (financialKpisLoading) {
+      return [
+        {
+          label: 'Costo por tarea',
+          value: '—',
+          helper: 'Cargando...'
+        },
+        {
+          label: 'Costo promedio por finca',
+          value: '—',
+          helper: 'Cargando...'
+        },
+        {
+          label: 'Costo promedio por hectárea',
+          value: '—',
+          helper: 'Cargando...'
+        },
+        {
+          label: 'Valor de inventario',
+          value: '—',
+          helper: 'Cargando...'
+        }
+      ];
+    }
+
+    // Si hay error, mostrar indicador de error
+    if (financialKpisError) {
+      return [
+        {
+          label: 'Costo por tarea',
+          value: '—',
+          helper: 'Error al cargar datos'
+        },
+        {
+          label: 'Costo promedio por finca',
+          value: '—',
+          helper: 'Error al cargar datos'
+        },
+        {
+          label: 'Costo promedio por hectárea',
+          value: '—',
+          helper: 'Error al cargar datos'
+        },
+        {
+          label: 'Valor de inventario',
+          value: '—',
+          helper: 'Error al cargar datos'
+        }
+      ];
+    }
+
+    // Fallback a datos locales si no hay datos del API
     const lotSummary = LOT_SUMMARY[selectedLotId];
     const lotCount = selectedLotId ? 1 : fincaOptions.length || lotNames.length || 1;
     const activeHectares = selectedLotId
@@ -1038,9 +1756,58 @@ function AdminDashboard() {
         helper: selectedLotName ? `Inventario de ${selectedLotName}` : 'Inventario consolidado'
       }
     ];
-  }, [selectedLotId, selectedLotName, totalAmount, totalCompleted, fincaOptions.length]);
+  }, [selectedLotId, selectedLotName, totalAmount, totalCompleted, fincaOptions.length, financialKpis, financialKpisLoading, financialKpisError]);
 
   const inventoryStats = useMemo(() => {
+    // Si tenemos datos del API y no estamos cargando, usarlos
+    if (inventoryData && !inventoryDataLoading) {
+      const totalItems = parseInt(inventoryData.total_items) || 0;
+      const tiposArray = Array.isArray(inventoryData.tipos) ? inventoryData.tipos : [];
+      const categoriasArray = Array.isArray(inventoryData.categorias) ? inventoryData.categorias : [];
+
+      const typeEntries = tiposArray.map((tipo, index) => ({
+        label: tipo.tipo || 'Sin nombre',
+        count: parseInt(tipo.count) || 0,
+        color: INVENTORY_PIE_COLORS[index % INVENTORY_PIE_COLORS.length]
+      }));
+
+      const typeSegments = buildDynamicSegments(typeEntries, totalItems);
+
+      const categoryEntries = categoriasArray.map((categoria, index) => {
+        const baseColor = INVENTORY_PIE_COLORS[(index + 3) % INVENTORY_PIE_COLORS.length];
+        const normalizedName = (categoria.categoria || '').toLowerCase();
+        const customColor =
+          normalizedName === 'agroquimicos' || normalizedName === 'agroquímicos'
+            ? '#f59e0b'
+            : baseColor;
+        return {
+          label: categoria.categoria || 'Desconocida',
+          count: parseInt(categoria.count) || 0,
+          color: customColor
+        };
+      });
+
+      const categorySegments = buildDynamicSegments(categoryEntries, totalItems);
+
+      return {
+        totalTypes: totalItems,
+        totalCategories: categoriasArray.length,
+        typeSegments,
+        categorySegments
+      };
+    }
+
+    // Si está cargando, mostrar valores por defecto
+    if (inventoryDataLoading) {
+      return {
+        totalTypes: 0,
+        totalCategories: 0,
+        typeSegments: [],
+        categorySegments: []
+      };
+    }
+
+    // Fallback a datos locales si no hay datos del API
     const types = Array.isArray(TYPEPROD) ? TYPEPROD : [];
     const categories = Array.isArray(CATEGORYPROD) ? CATEGORYPROD : [];
 
@@ -1092,16 +1859,69 @@ function AdminDashboard() {
       typeSegments,
       categorySegments
     };
-  }, []);
+  }, [inventoryData, inventoryDataLoading]);
 
   const salesInsights = useMemo(() => {
+    // Si tenemos datos del API y no estamos cargando, usarlos
+    if (salesData && !salesDataLoading) {
+      const clientTop = salesData?.cliente_top;
+      const topCultivos = Array.isArray(salesData?.top_cultivos) ? salesData.top_cultivos : [];
+
+      const topClient = clientTop
+        ? {
+            label: clientTop.nombre || 'Cliente sin nombre',
+            amount: parseFloat(clientTop.total_q) || 0,
+            quantityKg: parseFloat(clientTop.total_kg) || 0
+          }
+        : null;
+
+      const cropBars = topCultivos.slice(0, 5).map((cultivo) => ({
+        label: cultivo.cultivo || 'Cultivo sin nombre',
+        amount: parseFloat(cultivo.total_q) || 0
+      }));
+
+      const maxCropAmount = cropBars.reduce((max, entry) => Math.max(max, entry.amount), 0);
+
+      return {
+        hasSales: !!topClient,
+        topClient,
+        cropBars,
+        maxCropAmount
+      };
+    }
+
+    // Si está cargando, mostrar indicador de carga
+    if (salesDataLoading) {
+      return {
+        hasSales: true,
+        topClient: {
+          label: 'Cargando...',
+          amount: 0,
+          quantityKg: 0
+        },
+        cropBars: [],
+        maxCropAmount: 0
+      };
+    }
+
+    // Si hay error, usar fallback
+    if (salesDataError) {
+      return {
+        hasSales: false,
+        topClient: null,
+        cropBars: [],
+        maxCropAmount: 0
+      };
+    }
+
+    // Fallback a datos locales si no hay datos del API
     const sales = Array.isArray(VENTASTEST) ? VENTASTEST : [];
     if (!sales.length) {
       return {
         hasSales: false,
         topClient: null,
         cropBars: [],
-        maxCropKg: 0
+        maxCropAmount: 0
       };
     }
 
@@ -1147,42 +1967,46 @@ function AdminDashboard() {
       cropBars,
       maxCropAmount
     };
-  }, [VENTASTEST]);
+  }, [VENTASTEST, salesData, salesDataLoading, salesDataError]);
 
-  const workforceStats = useMemo(() => {
-    const personnel = Array.isArray(PERSONALTEST) ? PERSONALTEST : [];
-    const counts = personnel.reduce(
-      (acc, person) => {
-        const isInPayroll = Number(person?.isinplanilla) === 1;
-        const normalizedGender = (person?.genero || '').toLowerCase();
+  const personnelMockData = useMemo(
+    () => (Array.isArray(PERSONALTEST) ? PERSONALTEST : []),
+    [PERSONALTEST]
+  );
 
-        if (isInPayroll) {
-          acc.onPayroll += 1;
-        } else {
-          acc.offPayroll += 1;
-        }
+  const taskAssignmentStats = useMemo(() => {
+    if (avgPersonalTaskData.length) {
+      const totalTasks = avgPersonalTaskData.reduce((sum, record) => sum + record.taskCount, 0);
+      const entries = avgPersonalTaskData
+        .map((record) => {
+          const taskType = taskTypes.find((task) => task.id === record.taskTypeId);
+          const label = taskType?.label || `Tipo ${record.taskTypeId}`;
+          return {
+            id: taskType?.id || record.taskTypeId,
+            label,
+            averagePeople: record.averagePersonnel,
+            taskCount: record.taskCount,
+            percentage: totalTasks ? (record.taskCount / Math.max(totalTasks, 1)) * 100 : 0
+          };
+        })
+        .sort((a, b) => b.averagePeople - a.averagePeople);
+      const maxAverage = entries.reduce(
+        (max, entry) => Math.max(max, entry.averagePeople || 0),
+        0
+      );
+      return {
+        entries,
+        maxAssigned: maxAverage,
+        mode: 'remote'
+      };
+    }
 
-        if (normalizedGender === 'masculino') {
-          acc.men += 1;
-        } else if (normalizedGender === 'femenino') {
-          acc.women += 1;
-        } else {
-          acc.unknownGender += 1;
-        }
-
-        return acc;
-      },
-      { onPayroll: 0, offPayroll: 0, men: 0, women: 0, unknownGender: 0 }
-    );
-
-    const payrollTotal = counts.onPayroll + counts.offPayroll;
-    const genderTotal = counts.men + counts.women;
     const taskTypeAssignments = taskTypes
       .map((taskType) => {
         let assignedPeople = 0;
         let totalTasks = 0;
 
-        personnel.forEach((person) => {
+        personnelMockData.forEach((person) => {
           const tasksByType = person?.info_tareas?.tareas_por_tipo || {};
           const count = Number(tasksByType?.[taskType.label]) || 0;
           if (count > 0) {
@@ -1195,7 +2019,9 @@ function AdminDashboard() {
           id: taskType.id,
           label: taskType.label,
           assignedPeople,
-          percentage: personnel.length ? (assignedPeople / personnel.length) * 100 : 0,
+          percentage: personnelMockData.length
+            ? (assignedPeople / personnelMockData.length) * 100
+            : 0,
           averageTasksPerPerson: assignedPeople ? totalTasks / assignedPeople : 0
         };
       })
@@ -1208,28 +2034,49 @@ function AdminDashboard() {
     );
 
     return {
-      totalPersonnel: personnel.length,
+      entries: taskTypeAssignments,
+      maxAssigned: maxAssignedPeople,
+      mode: 'mock'
+    };
+  }, [avgPersonalTaskData, taskTypes, personnelMockData]);
+
+  const workforceStats = useMemo(() => {
+    const countsSource = workforceSummary;
+    const safeCounts = {
+      totalPersonnel: countsSource?.totalPersonnel || 0,
+      onPayroll: countsSource?.onPayroll || 0,
+      offPayroll: countsSource?.offPayroll || 0,
+      men: countsSource?.men || 0,
+      women: countsSource?.women || 0,
+      unknownGender: countsSource?.unknownGender || 0
+    };
+    const payrollTotal = safeCounts.onPayroll + safeCounts.offPayroll;
+    const genderTotal = safeCounts.men + safeCounts.women;
+    const resolvedTotal =
+      safeCounts.totalPersonnel || payrollTotal || genderTotal + safeCounts.unknownGender;
+    const missingGender =
+      safeCounts.unknownGender || Math.max(resolvedTotal - genderTotal, 0);
+
+    return {
+      totalPersonnel: resolvedTotal,
       payroll: {
         total: payrollTotal,
-        segments: createPieSegments(counts, payrollTotal, [
+        segments: createPieSegments(safeCounts, payrollTotal, [
           { key: 'onPayroll', label: 'En planilla', color: PIE_COLORS.payroll },
           { key: 'offPayroll', label: 'Fuera de planilla', color: PIE_COLORS.offPayroll }
         ])
       },
       gender: {
         total: genderTotal,
-        segments: createPieSegments(counts, genderTotal, [
+        segments: createPieSegments(safeCounts, genderTotal, [
           { key: 'men', label: 'Hombres', color: PIE_COLORS.men },
           { key: 'women', label: 'Mujeres', color: PIE_COLORS.women }
         ]),
-        missing: counts.unknownGender
+        missing: missingGender
       },
-      taskAssignments: {
-        entries: taskTypeAssignments,
-        maxAssigned: maxAssignedPeople
-      }
+      taskAssignments: taskAssignmentStats
     };
-  }, [PERSONALTEST]);
+  }, [workforceSummary, taskAssignmentStats]);
 
   const payrollPieChart = useMemo(
     () => buildDoughnutChartConfig(workforceStats.payroll.segments),
@@ -1413,6 +2260,27 @@ function AdminDashboard() {
     setSelectedLotId(value);
   };
 
+  const handleHarvestSearchChange = (event) => {
+    const value = event.target.value;
+    setHarvestSearchInput(value);
+    if (!value) return;
+    const match = harvestOptions.find(
+      (option) => option.label.toLowerCase() === value.toLowerCase()
+    );
+    if (match) {
+      setSelectedHarvestIds((prev) => (prev.includes(match.id) ? prev : [...prev, match.id]));
+      setHarvestSearchInput('');
+    }
+  };
+
+  const handleRemoveSelectedHarvest = (harvestId) => {
+    setSelectedHarvestIds((prev) => prev.filter((id) => id !== harvestId));
+  };
+
+  const handleClearSelectedHarvests = () => {
+    setSelectedHarvestIds([]);
+  };
+
   const formatPermissionsList = (permissions = {}) => {
     const grantedLabels = Object.entries(PERMISSION_LABELS)
       .filter(([key]) => Number(permissions[key]) === 1)
@@ -1530,6 +2398,26 @@ function AdminDashboard() {
       <p className="admin-dashboard__workforce-summary">
         {`Total de colaboradores: ${workforceStats.totalPersonnel}`}
       </p>
+      {(workforceLoading || workforceError || avgPersonalLoading || avgPersonalError) && (
+        <div className="admin-dashboard__workforce-statuses">
+          {workforceLoading && (
+            <p className="admin-dashboard__workforce-status">Actualizando resumen de personal…</p>
+          )}
+          {workforceError && (
+            <p className="admin-dashboard__workforce-status admin-dashboard__workforce-status--error">
+              {workforceError}
+            </p>
+          )}
+          {avgPersonalLoading && (
+            <p className="admin-dashboard__workforce-status">Actualizando promedios por tarea…</p>
+          )}
+          {avgPersonalError && (
+            <p className="admin-dashboard__workforce-status admin-dashboard__workforce-status--error">
+              {avgPersonalError}
+            </p>
+          )}
+        </div>
+      )}
       <div className="admin-dashboard__pie-grid">
         <article className="admin-dashboard__pie-card">
           <div className="admin-dashboard__pie-card-header">
@@ -1590,23 +2478,44 @@ function AdminDashboard() {
         <article className="admin-dashboard__task-assignment-card">
           <div className="admin-dashboard__task-assignment-header">
             <h3>Promedio por tipo de tarea</h3>
-            <span>Colaboradores con asignaciones registradas</span>
+            <span>
+              {workforceStats.taskAssignments.mode === 'remote'
+                ? 'Datos consolidados del personal en tareas'
+                : 'Colaboradores con asignaciones registradas'}
+            </span>
           </div>
           <ul className="admin-dashboard__task-assignment-list">
             {workforceStats.taskAssignments.entries.map((entry) => {
+              const isRemoteMetrics = workforceStats.taskAssignments.mode === 'remote';
+              const metricValue = isRemoteMetrics ? entry.averagePeople || 0 : entry.assignedPeople || 0;
               const barPercent = workforceStats.taskAssignments.maxAssigned
-                ? (entry.assignedPeople / workforceStats.taskAssignments.maxAssigned) * 100
+                ? (metricValue / workforceStats.taskAssignments.maxAssigned) * 100
                 : 0;
+              const averageFormatOptions = isRemoteMetrics
+                ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                : { minimumFractionDigits: 0, maximumFractionDigits: 0 };
+              const formattedAverage = metricValue.toLocaleString('es-GT', averageFormatOptions);
+              const percentageLabel = Number(entry.percentage || 0).toFixed(1);
               return (
                 <li key={entry.id} className="admin-dashboard__task-assignment-row">
                   <div className="admin-dashboard__task-assignment-info">
                     <p>{entry.label}</p>
-                    <strong>{`Promedio: ${entry.assignedPeople.toLocaleString('es-GT')} ${
-                      entry.assignedPeople === 1 ? 'persona' : 'personas'
-                    }`}</strong>
-                    <small>{`${entry.percentage.toFixed(1)}% del personal con registros`}</small>
-                    {entry.averageTasksPerPerson > 0 && (
-                      <small>{`≈ ${entry.averageTasksPerPerson.toFixed(1)} tareas por persona`}</small>
+                    <strong>
+                      {`Promedio: ${formattedAverage} ${
+                        metricValue === 1 ? 'persona' : 'personas'
+                      }`}
+                    </strong>
+                    {isRemoteMetrics ? (
+                      <small>{`${(entry.taskCount || 0).toLocaleString(
+                        'es-GT'
+                      )} tareas (${percentageLabel}%)`}</small>
+                    ) : (
+                      <>
+                        <small>{`${percentageLabel}% del personal con registros`}</small>
+                        {entry.averageTasksPerPerson > 0 && (
+                          <small>{`≈ ${entry.averageTasksPerPerson.toFixed(1)} tareas por persona`}</small>
+                        )}
+                      </>
                     )}
                   </div>
                   <div className="admin-dashboard__task-assignment-bar">
@@ -1807,6 +2716,58 @@ function AdminDashboard() {
                   </select>
                 </label>
               </div>
+            </div>
+            <div className="admin-dashboard__harvest-filter">
+              <label className="admin-dashboard__harvest-autocomplete">
+                <span>Filtrar cosechas por nombre</span>
+                <input
+                  type="text"
+                  list="harvest-search-options"
+                  placeholder="Busca y selecciona una cosecha"
+                  value={harvestSearchInput}
+                  onChange={handleHarvestSearchChange}
+                  disabled={harvestCatalogLoading && !harvestCatalog.length}
+                />
+                <datalist id="harvest-search-options">
+                  {harvestOptions.map((option) => (
+                    <option key={option.id} value={option.label} />
+                  ))}
+                </datalist>
+                <small
+                  className={
+                    harvestCatalogError ? 'admin-dashboard__harvest-helper--error' : undefined
+                  }
+                >
+                  {harvestCatalogLoading
+                    ? 'Descargando catálogo de cosechas...'
+                    : harvestCatalogError ||
+                      'Selecciona una o varias cosechas para utilizar sus fincas asociadas.'}
+                </small>
+              </label>
+              {selectedHarvestEntries.length > 0 && (
+                <div className="admin-dashboard__harvest-chips">
+                  {selectedHarvestEntries.map((entry) => (
+                    <span key={entry.id} className="admin-dashboard__harvest-chip">
+                      <strong>{entry.name}</strong>
+                      <small>{`Finca #${entry.fincaId}`}</small>
+                      <button
+                        type="button"
+                        aria-label={`Quitar ${entry.name}`}
+                        onClick={() => handleRemoveSelectedHarvest(entry.id)}
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    className="admin-dashboard__harvest-chip-clear"
+                    onClick={handleClearSelectedHarvests}
+                  >
+                    Limpiar selección
+                  </button>
+                </div>
+              )}
             </div>
             <div className="admin-dashboard__chart">
               {operationalCostsLoading ? (

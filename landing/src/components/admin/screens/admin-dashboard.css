@@ -447,6 +447,101 @@
   opacity: 0.6;
 }
 
+.admin-dashboard__harvest-filter {
+  margin: 1rem 0 0.5rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.admin-dashboard__harvest-autocomplete {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  color: var(--tc-text-muted);
+}
+
+.admin-dashboard__harvest-autocomplete input {
+  border-radius: 10px;
+  border: 1px solid rgba(46, 125, 50, 0.35);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.95rem;
+}
+
+.admin-dashboard__harvest-autocomplete small {
+  font-size: 0.75rem;
+  color: var(--tc-text-muted);
+}
+
+.admin-dashboard__harvest-helper--error {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.admin-dashboard__harvest-chips {
+  flex: 1 1 220px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-dashboard__harvest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(46, 125, 50, 0.12);
+  color: var(--tc-text-dark);
+  border: 1px solid rgba(46, 125, 50, 0.25);
+}
+
+.admin-dashboard__harvest-chip strong {
+  font-size: 0.88rem;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-dashboard__harvest-chip small {
+  font-size: 0.75rem;
+  color: var(--tc-text-muted);
+}
+
+.admin-dashboard__harvest-chip button {
+  border: none;
+  background: transparent;
+  color: var(--tc-green-dark);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.admin-dashboard__harvest-chip button:hover {
+  color: #1b5e20;
+}
+
+.admin-dashboard__harvest-chip-clear {
+  border: none;
+  background: rgba(46, 125, 50, 0.12);
+  color: #2e7d32;
+  border-radius: 10px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.admin-dashboard__harvest-chip-clear:hover {
+  background: rgba(46, 125, 50, 0.2);
+}
+
 .admin-dashboard__chart {
   display: flex;
   flex-direction: column;
@@ -796,6 +891,23 @@
 .admin-dashboard__workforce-summary {
   margin: 0;
   color: var(--tc-text-muted);
+}
+
+.admin-dashboard__workforce-statuses {
+  margin: 0.35rem 0 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-dashboard__workforce-status {
+  font-size: 0.85rem;
+  color: var(--tc-text-muted);
+}
+
+.admin-dashboard__workforce-status--error {
+  color: #c62828;
+  font-weight: 600;
 }
 
 .admin-dashboard__pie-grid {
