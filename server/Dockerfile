@@ -68,8 +68,7 @@ echo ""
 
 npm start
 EOF
-
-chmod +x /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 ENV NODE_ENV=production
 EXPOSE 5174
