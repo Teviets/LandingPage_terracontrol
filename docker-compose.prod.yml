@@ -48,13 +48,15 @@ services:
       context: ./landing
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: /api
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
     container_name: terracontrol-nginx
     ports:
       - "80:80"
       - "443:443"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       - terracontrol-network
     restart: unless-stopped
