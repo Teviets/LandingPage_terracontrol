@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   db:
     image: postgres:16-alpine
@@ -9,13 +11,14 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U terra"]
+      test: ["CMD-SHELL", "pg_isready -U terra -d terracontrol"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
       - terracontrol-network
-
+    restart: unless-stopped
 
   api:
     build:
@@ -25,7 +28,7 @@ services:
     environment:
       DATABASE_URL: postgresql://terra:terra@db:5432/terracontrol?schema=public
       PORT: 5174
-      CORS_ORIGIN: https://terracontrolgt.com,https://www.terracontrolgt.com
+      CORS_ORIGIN: http://localhost,http://terracontrolgt.com,http://www.terracontrolgt.com
       NODE_ENV: production
     depends_on:
       db:
@@ -33,13 +36,19 @@ services:
     networks:
       - terracontrol-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5174/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   frontend:
     build:
       context: ./landing
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: https://terracontrolgt.com/api
+        VITE_API_BASE_URL: /api
         VITE_ENV: production
     container_name: terracontrol-frontend
     depends_on:
@@ -49,7 +58,7 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: nginx:latest
+    image: nginx:1.27-alpine
     container_name: terracontrol-nginx
     ports:
       - "80:80"
@@ -57,16 +66,22 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - frontend
       - api
     networks:
       - terracontrol-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   postgres-data:
+    driver: local
 
 networks:
   terracontrol-network:
