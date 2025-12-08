@@ -1227,6 +1227,13 @@
   animation-delay: 0.1s;
 }
 
+.admin-dashboard__kpi-card:last-child {
+  grid-column: 1 / -1;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 45%;
+}
+
 @keyframes admin-dashboard-kpi-pop {
   from {
     opacity: 0;

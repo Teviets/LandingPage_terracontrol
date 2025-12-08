@@ -803,6 +803,9 @@ function AdminDashboard() {
   const [inventoryData, setInventoryData] = useState(null);
   const [inventoryDataLoading, setInventoryDataLoading] = useState(false);
   const [inventoryDataError, setInventoryDataError] = useState('');
+  const [userData, setUserData] = useState(null);
+  const [userDataLoading, setUserDataLoading] = useState(false);
+  const [userDataError, setUserDataError] = useState('');
   const [showMapFilters, setShowMapFilters] = useState(true);
   const [showMapSummary, setShowMapSummary] = useState(true);
   const availableYears = useMemo(() => {
@@ -1624,6 +1627,48 @@ function AdminDashboard() {
     locationsLoading
   ]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchUserData = async () => {
+      setUserDataLoading(true);
+      setUserDataError('');
+
+      try {
+        const payload = await externalApiClient.get('/dashboard/userinfo');
+        if (cancelled) return;
+        
+        let userInfo = null;
+        if (payload?.body) {
+          if (typeof payload.body === 'string') {
+            const parsed = parseJsonSafely(payload.body);
+            userInfo = parsed?.data || parsed || null;
+          } else {
+            userInfo = payload.body?.data || payload.body || null;
+          }
+        } else {
+          userInfo = payload?.data || null;
+        }
+        
+        setUserData(userInfo);
+      } catch (error) {
+        if (cancelled) return;
+        setUserData(null);
+        setUserDataError(error.message || 'No se pudieron obtener los datos de usuarios.');
+      } finally {
+        if (!cancelled) {
+          setUserDataLoading(false);
+        }
+      }
+    };
+
+    fetchUserData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const kpiHighlights = useMemo(() => {
     // Si tenemos datos del API y no estamos cargando, usarlos
     if (financialKpis && !financialKpisLoading) {
@@ -1643,11 +1688,11 @@ function AdminDashboard() {
           value: formatCurrency(safeCostPerLot, { maximumFractionDigits: 2 }),
           helper: 'Desde datos operacionales'
         },
-        {
-          label: 'Costo promedio por hectárea',
-          value: formatCurrency(safeCostPerHectare, { maximumFractionDigits: 2 }),
-          helper: 'Desde datos operacionales'
-        },
+        // {
+        //   label: 'Costo promedio por hectárea',
+        //   value: formatCurrency(safeCostPerHectare, { maximumFractionDigits: 2 }),
+        //   helper: 'Desde datos operacionales'
+        // },
         {
           label: 'Costo promedio inventario',
           value: formatCurrency(safeAverageCostInventory, { maximumFractionDigits: 2 }),
@@ -1669,11 +1714,11 @@ function AdminDashboard() {
           value: '—',
           helper: 'Cargando...'
         },
-        {
-          label: 'Costo promedio por hectárea',
-          value: '—',
-          helper: 'Cargando...'
-        },
+        // {
+        //   label: 'Costo promedio por hectárea',
+        //   value: '—',
+        //   helper: 'Cargando...'
+        // },
         {
           label: 'Valor de inventario',
           value: '—',
@@ -1695,11 +1740,11 @@ function AdminDashboard() {
           value: '—',
           helper: 'Error al cargar datos'
         },
-        {
-          label: 'Costo promedio por hectárea',
-          value: '—',
-          helper: 'Error al cargar datos'
-        },
+        // {
+        //   label: 'Costo promedio por hectárea',
+        //   value: '—',
+        //   helper: 'Error al cargar datos'
+        // },
         {
           label: 'Valor de inventario',
           value: '—',
@@ -1743,13 +1788,13 @@ function AdminDashboard() {
         value: costPerLot,
         helper: selectedLotName || `${lotCount} fincas monitoreadas`
       },
-      {
-        label: 'Costo promedio por hectárea',
-        value: costPerHectare,
-        helper: selectedLotName
-          ? `${activeHectares} ha estimadas`
-          : `${activeHectares} ha monitoreadas`
-      },
+      // {
+      //   label: 'Costo promedio por hectárea',
+      //   value: costPerHectare,
+      //   helper: selectedLotName
+      //     ? `${activeHectares} ha estimadas`
+      //     : `${activeHectares} ha monitoreadas`
+      // },
       {
         label: 'Valor de inventario',
         value: formatCurrency(inventoryValuation),
@@ -2088,6 +2133,44 @@ function AdminDashboard() {
   );
 
   const userInsights = useMemo(() => {
+    // Use API data if available and not loading
+    if (userData && !userDataLoading) {
+      const totalUsers = userData.usuarios_totales || 0;
+      const activeUsers = userData.activos_30_dias || 0;
+      const newUsers = userData.nuevos_ingresos_15_dias || 0;
+      const inactiveUsers = Math.max(totalUsers - activeUsers, 0);
+      
+      // Transform crecimiento_mensual to monthlySignups format
+      let monthlySignups = [];
+      if (Array.isArray(userData.crecimiento_mensual)) {
+        monthlySignups = userData.crecimiento_mensual.map((entry) => ({
+          label: entry.mes,
+          count: entry.altas || 0
+        }));
+      }
+      const maxMonthlySignups = monthlySignups.reduce(
+        (max, entry) => Math.max(max, entry.count),
+        0
+      );
+      
+      return {
+        accounts: [],
+        totalUsers,
+        activeUsers,
+        newUsers,
+        inactiveUsers,
+        paymentStatus: { alDia: 0, proximo: 0, vencido: 0, desconocido: 0 },
+        methodEntries: [],
+        maxMethodCount: 0,
+        permissionStats: [],
+        upcomingRenewals: [],
+        highlightedUsers: [],
+        monthlySignups,
+        maxMonthlySignups
+      };
+    }
+
+    // Fallback to mock data
     const now = new Date();
     const MS_IN_DAY = 1000 * 60 * 60 * 24;
     const accounts = (Array.isArray(MOCK_USER_ACCOUNTS) ? MOCK_USER_ACCOUNTS : []).map((account) => {
@@ -2217,7 +2300,7 @@ function AdminDashboard() {
       monthlySignups,
       maxMonthlySignups
     };
-  }, []);
+  }, [userData, userDataLoading]);
 
   useEffect(() => {
     setSelectedMonthFilter('todos');
@@ -2310,11 +2393,11 @@ function AdminDashboard() {
       value: userInsights.newUsers,
       helper: `Últimos ${USER_ACTIVITY_WINDOWS.newDays} días`
     },
-    {
+    /*{
       label: 'Pagos a revisar',
       value: pendingPayments,
       helper: 'Próximos o vencidos'
-    }
+    }*/
   ];
 
   const paymentStatusEntries = [
@@ -2991,9 +3074,9 @@ function AdminDashboard() {
               )}
             </article>
 
-            <article className="admin-dashboard__users-insight-card admin-dashboard__users-insight-card--metrics">
+            {/*<article className="admin-dashboard__users-insight-card admin-dashboard__users-insight-card--metrics">
               <div className="admin-dashboard__users-metrics-grid">
-                <section className="admin-dashboard__users-metric">
+                 <section className="admin-dashboard__users-metric">
                   <div className="admin-dashboard__users-insight-card-header">
                     <h3>Estado de pagos</h3>
                     <small>{`Base: ${userInsights.totalUsers} usuarios`}</small>
@@ -3090,12 +3173,12 @@ function AdminDashboard() {
                       </li>
                     ))}
                   </ul>
-                </section>
+                </section> 
               </div>
-            </article>
+            </article>*/}
           </section>
 
-          <section className="admin-dashboard__quadrant admin-dashboard__quadrant--users-table">
+          {/* <section className="admin-dashboard__quadrant admin-dashboard__quadrant--users-table">
             <div className="admin-dashboard__users-table-header">
               <h3>Usuarios destacados</h3>
               <span>Ordenado por última actividad</span>
@@ -3143,7 +3226,7 @@ function AdminDashboard() {
             ) : (
               <p className="admin-dashboard__users-empty">Sin registros de usuarios.</p>
             )}
-          </section>
+          </section> */}
         </div>
       )}
     </div>
