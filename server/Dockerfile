@@ -3,7 +3,7 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Instalar dependencias del sistema necesarias
-RUN apk add --no-cache netcat-openbsd postgresql-client bash
+RUN apk add --no-cache netcat-openbsd postgresql-client bash curl
 
 # Copiar archivos de configuración
 COPY package*.json ./
