@@ -8,7 +8,7 @@ rm -f /etc/nginx/conf.d/*.conf 2>/dev/null || true
 cat > /etc/nginx/conf.d/default.conf << 'EOF'
 server {
   listen 80;
-  server_name _;
+  server_name terracontrolgt.com www.terracontrolgt.com;
 
   root /usr/share/nginx/html;
   index index.html;
