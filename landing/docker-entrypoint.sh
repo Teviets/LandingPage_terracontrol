@@ -8,7 +8,7 @@ rm -f /etc/nginx/conf.d/*.conf 2>/dev/null || true
 cat > /etc/nginx/conf.d/default.conf << 'EOF'
 server {
   listen 80;
-  server_name terracontrolgt.com www.terracontrolgt.com;
+  server_name _;
 
   root /usr/share/nginx/html;
   index index.html;
@@ -18,7 +18,7 @@ server {
   }
 
   location /api/ {
-    proxy_pass http://api:5174/;
+    proxy_pass http://api:5174/api/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
