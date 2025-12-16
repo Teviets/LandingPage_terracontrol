@@ -11,6 +11,148 @@ const normalizeName = (value = '') =>
     .replace(/\s+/g, '-');
 const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 const polygonPalette = ['#66bb6a', '#43a047', '#26a69a', '#5c6bc0', '#ef6c00'];
+const MAP_BOUNDS_PADDING = { top: 48, right: 48, bottom: 48, left: 48 };
+
+const extractLocationId = (location) => {
+  if (!location || typeof location !== 'object') return '';
+  const rawId =
+    location.id_finca ??
+    location.id ??
+    location.fincaId ??
+    location.finca_id ??
+    (typeof location.idFinca !== 'undefined' ? location.idFinca : undefined);
+  if (rawId === undefined || rawId === null || rawId === '') {
+    return '';
+  }
+  return String(rawId);
+};
+
+const computePolygonMetrics = (path = []) => {
+  if (!Array.isArray(path) || !path.length) return null;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  let signedArea = 0;
+  let centroidLat = 0;
+  let centroidLng = 0;
+
+  for (let index = 0; index < path.length; index += 1) {
+    const current = path[index];
+    const next = path[(index + 1) % path.length];
+    if (!current || !next) {
+      continue;
+    }
+    const { lat: x0, lng: y0 } = current;
+    const { lat: x1, lng: y1 } = next;
+    if (![x0, y0, x1, y1].every((value) => Number.isFinite(value))) {
+      return null;
+    }
+
+    minLat = Math.min(minLat, x0);
+    maxLat = Math.max(maxLat, x0);
+    minLng = Math.min(minLng, y0);
+    maxLng = Math.max(maxLng, y0);
+
+    const cross = x0 * y1 - x1 * y0;
+    signedArea += cross;
+    centroidLat += (x0 + x1) * cross;
+    centroidLng += (y0 + y1) * cross;
+  }
+
+  if (!Number.isFinite(minLat) || !Number.isFinite(minLng)) {
+    return null;
+  }
+
+  const area = signedArea / 2;
+  let centroid;
+  if (area === 0) {
+    const totals = path.reduce(
+      (acc, point) => {
+        acc.lat += point.lat;
+        acc.lng += point.lng;
+        return acc;
+      },
+      { lat: 0, lng: 0 }
+    );
+    const divisor = path.length || 1;
+    centroid = { lat: totals.lat / divisor, lng: totals.lng / divisor };
+  } else {
+    centroid = {
+      lat: centroidLat / (6 * area),
+      lng: centroidLng / (6 * area)
+    };
+  }
+
+  return {
+    bounds: { minLat, maxLat, minLng, maxLng },
+    centroid,
+    area: Math.abs(area)
+  };
+};
+
+const combinePolygonGeometry = (polygons = []) => {
+  if (!Array.isArray(polygons) || !polygons.length) return null;
+  let aggregate = null;
+
+  polygons.forEach((polygon) => {
+    const metrics = computePolygonMetrics(polygon.path);
+    if (!metrics) return;
+
+    if (!aggregate) {
+      aggregate = {
+        bounds: { ...metrics.bounds },
+        centroid: metrics.centroid ? { ...metrics.centroid } : null,
+        area: metrics.area
+      };
+      return;
+    }
+
+    aggregate.bounds.minLat = Math.min(aggregate.bounds.minLat, metrics.bounds.minLat);
+    aggregate.bounds.maxLat = Math.max(aggregate.bounds.maxLat, metrics.bounds.maxLat);
+    aggregate.bounds.minLng = Math.min(aggregate.bounds.minLng, metrics.bounds.minLng);
+    aggregate.bounds.maxLng = Math.max(aggregate.bounds.maxLng, metrics.bounds.maxLng);
+
+    const totalArea = aggregate.area + metrics.area;
+    if (metrics.centroid) {
+      if (!aggregate.centroid) {
+        aggregate.centroid = { ...metrics.centroid };
+      } else if (totalArea > 0) {
+        aggregate.centroid = {
+          lat:
+            (aggregate.centroid.lat * aggregate.area + metrics.centroid.lat * metrics.area) /
+            totalArea,
+          lng:
+            (aggregate.centroid.lng * aggregate.area + metrics.centroid.lng * metrics.area) /
+            totalArea
+        };
+      } else {
+        aggregate.centroid = {
+          lat: (aggregate.centroid.lat + metrics.centroid.lat) / 2,
+          lng: (aggregate.centroid.lng + metrics.centroid.lng) / 2
+        };
+      }
+    }
+
+    aggregate.area = totalArea;
+  });
+
+  return aggregate;
+};
+
+const extendBoundsForSinglePoint = (bounds) => {
+  if (!bounds || !bounds.getNorthEast || !bounds.getSouthWest) return;
+  const northEast = bounds.getNorthEast();
+  const southWest = bounds.getSouthWest();
+  if (!northEast || !southWest || !northEast.equals || !southWest.equals) {
+    return;
+  }
+  if (northEast.equals(southWest)) {
+    const offset = 0.01;
+    bounds.extend({ lat: northEast.lat() + offset, lng: northEast.lng() + offset });
+    bounds.extend({ lat: northEast.lat() - offset, lng: northEast.lng() - offset });
+  }
+};
 
 const buildPolygonPath = (lot) => {
   if (!lot || !lot.latitudes || !lot.longitudes) return [];
@@ -61,6 +203,7 @@ function GeoPolygonMap({
   selectedDepartment,
   selectedMunicipality,
   selectedLot,
+  selectedFincaId,
   locations = [],
   isLoadingLocations = false,
   showSummary = true,
@@ -78,10 +221,11 @@ function GeoPolygonMap({
     if (!Array.isArray(locations) || !locations.length) return [];
     let colorIndex = 0;
     return locations
-      .flatMap((location) => {
+      .flatMap((location, locationIndex) => {
         if (!Array.isArray(location?.lotes)) {
           return [];
         }
+        const fincaId = extractLocationId(location) || `finca-${locationIndex}`;
         return location.lotes
           .map((lot, idx) => {
             const path = buildPolygonPath(lot);
@@ -91,17 +235,39 @@ function GeoPolygonMap({
             const color = polygonPalette[colorIndex % polygonPalette.length];
             colorIndex += 1;
             return {
-              id: `${location.id}-${lot.id_lote || idx}`,
+              id: `${fincaId}-${lot.id_lote || idx}`,
               finca: location.nombre,
               lotName: lot.nombre_lote,
               path,
-              color
+              color,
+              fincaId
             };
           })
           .filter(Boolean);
       })
       .filter(Boolean);
   }, [locations]);
+
+  const targetPolygons = useMemo(() => {
+    if (!locationPolygons.length) return [];
+    if (selectedFincaId) {
+      const filtered = locationPolygons.filter((polygon) => polygon.fincaId === selectedFincaId);
+      if (filtered.length) {
+        return filtered;
+      }
+    }
+    return locationPolygons;
+  }, [locationPolygons, selectedFincaId]);
+
+  const polygonGeometry = useMemo(
+    () => combinePolygonGeometry(targetPolygons),
+    [targetPolygons]
+  );
+
+  const polygonPoints = useMemo(
+    () => targetPolygons.flatMap((polygon) => polygon.path || []),
+    [targetPolygons]
+  );
 
   const fincasPreview = useMemo(() => {
     if (!Array.isArray(locations) || !locations.length) return '';
@@ -126,8 +292,30 @@ function GeoPolygonMap({
 
   useEffect(() => {
     if (!mapRef.current || !isLoaded || typeof window === 'undefined' || !window.google) return;
-    let cancelled = false;
     const map = mapRef.current;
+    const hasFincaSelection = Boolean(selectedFincaId);
+
+    if (hasFincaSelection && polygonPoints.length) {
+      const bounds = new window.google.maps.LatLngBounds();
+      let hasValidPoints = false;
+      polygonPoints.forEach((point) => {
+        if (Number.isFinite(point.lat) && Number.isFinite(point.lng)) {
+          bounds.extend(point);
+          hasValidPoints = true;
+        }
+      });
+
+      if (hasValidPoints) {
+        extendBoundsForSinglePoint(bounds);
+        map.fitBounds(bounds, MAP_BOUNDS_PADDING);
+        if (polygonGeometry?.centroid) {
+          map.panTo(polygonGeometry.centroid);
+        }
+        return;
+      }
+    }
+
+    let cancelled = false;
 
     const resetToDefault = () => {
       map.panTo(defaultCenter);
@@ -260,14 +448,18 @@ function GeoPolygonMap({
       });
     } else if (selectedDepartment) {
       const normalizedDepartment = normalizeName(selectedDepartment);
-      const cacheKey = `department:${normalizedDepartment}`;
       const fallbackView = departmentViews[normalizedDepartment];
-      geocodeAndFocus({
-        query: `${selectedDepartment}, Guatemala`,
-        cacheKey,
-        fallbackView,
-        radius: 0.25
-      });
+      if (fallbackView) {
+        applyFallbackView(fallbackView);
+      } else {
+        const cacheKey = `department:${normalizedDepartment}`;
+        geocodeAndFocus({
+          query: `${selectedDepartment}, Guatemala`,
+          cacheKey,
+          fallbackView,
+          radius: 0.25
+        });
+      }
     } else {
       resetToDefault();
     }
@@ -275,7 +467,14 @@ function GeoPolygonMap({
     return () => {
       cancelled = true;
     };
-  }, [selectedDepartment, selectedMunicipality, isLoaded]);
+  }, [
+    polygonPoints,
+    polygonGeometry,
+    selectedFincaId,
+    selectedDepartment,
+    selectedMunicipality,
+    isLoaded
+  ]);
 
   if (!apiKey) {
     return (

@@ -820,7 +820,8 @@ function AdminDashboard() {
     }
     return years;
   }, []);
-  const [selectedYearFilter, setSelectedYearFilter] = useState(() => String(new Date().getFullYear()));
+  const defaultYearFilter = useMemo(() => String(new Date().getFullYear()), []);
+  const [selectedYearFilter, setSelectedYearFilter] = useState(defaultYearFilter);
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('todos');
   const [selectedDayFilter, setSelectedDayFilter] = useState('todos');
   const [selectedSortOption, setSelectedSortOption] = useState('amount-desc');
@@ -853,6 +854,12 @@ function AdminDashboard() {
     return Array.from(new Set(ids));
   }, [shouldFilterByFincas, selectedLotId, locationsData]);
   const hasSelectedHarvests = selectedHarvestIds.length > 0;
+  const hasActiveOperationalFilters = Boolean(
+    selectedYearFilter !== defaultYearFilter ||
+      selectedMonthFilter !== 'todos' ||
+      selectedDayFilter !== 'todos' ||
+      selectedSortOption !== 'amount-desc'
+  );
   const fincaQueryParam = useMemo(() => fincaIdsForFilters.join(','), [fincaIdsForFilters]);
   const harvestOptions = useMemo(
     () =>
@@ -1066,6 +1073,9 @@ function AdminDashboard() {
   const selectedMunicipalityName =
     municipalities.find((municipality) => municipality.id === selectedMunicipalityId)?.name || '';
   const selectedLotName = fincaOptions.find((lot) => lot.id === selectedLotId)?.name || '';
+  const hasActiveMapFilters = Boolean(
+    selectedDepartmentId || selectedMunicipalityId || selectedLotId
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -2343,6 +2353,37 @@ function AdminDashboard() {
     setSelectedLotId(value);
   };
 
+  const handleClearDepartmentFilter = () => {
+    setDepartmentInput('');
+    setSelectedDepartmentId('');
+    setMunicipalityInput('');
+    setSelectedMunicipalityId('');
+  };
+
+  const handleClearMunicipalityFilter = () => {
+    setMunicipalityInput('');
+    setSelectedMunicipalityId('');
+  };
+
+  const handleClearLotFilter = () => {
+    setSelectedLotId('');
+  };
+
+  const handleClearAllMapFilters = () => {
+    setDepartmentInput('');
+    setSelectedDepartmentId('');
+    setMunicipalityInput('');
+    setSelectedMunicipalityId('');
+    setSelectedLotId('');
+  };
+
+  const handleResetOperationalFilters = () => {
+    setSelectedYearFilter(defaultYearFilter);
+    setSelectedMonthFilter('todos');
+    setSelectedDayFilter('todos');
+    setSelectedSortOption('amount-desc');
+  };
+
   const handleHarvestSearchChange = (event) => {
     const value = event.target.value;
     setHarvestSearchInput(value);
@@ -2709,6 +2750,16 @@ function AdminDashboard() {
                         </p>
                       )}
                     </div>
+                    <div className="admin-dashboard__map-actions">
+                      <button
+                        type="button"
+                        className="admin-dashboard__map-clear"
+                        onClick={handleClearAllMapFilters}
+                        disabled={!hasActiveMapFilters}
+                      >
+                        Limpiar filtros
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <button
@@ -2723,6 +2774,7 @@ function AdminDashboard() {
                   selectedDepartment={selectedDepartmentName}
                   selectedMunicipality={selectedMunicipalityName}
                   selectedLot={selectedLotName}
+                  selectedFincaId={selectedLotId}
                   locations={locationsData}
                   isLoadingLocations={locationsLoading}
                   showSummary={showMapSummary}
@@ -2798,6 +2850,14 @@ function AdminDashboard() {
                     ))}
                   </select>
                 </label>
+                <button
+                  type="button"
+                  className="admin-dashboard__chart-filters-clear"
+                  onClick={handleResetOperationalFilters}
+                  disabled={!hasActiveOperationalFilters}
+                >
+                  Limpiar filtros
+                </button>
               </div>
             </div>
             <div className="admin-dashboard__harvest-filter">
