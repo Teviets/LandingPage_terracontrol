@@ -29,8 +29,8 @@ async function main() {
 
   // Seed users - check for each one individually
   const users = [
-    { username: 'gabrielCAdmin', password: 'TerraControl!2026', hasFullAccess: 1 },
-    { username: 'JavierMAmin', password: 'TerraControl!2026', hasFullAccess: 1 },
+    { username: 'GabrielCAdmin', password: 'TerraControl!2026', hasFullAccess: 1 },
+    { username: 'JavierMAdmin', password: 'TerraControl!2026', hasFullAccess: 1 },
     { username: 'SebasEDev', password: 'TerraControl!2026', hasFullAccess: 1 }
   ];
 
