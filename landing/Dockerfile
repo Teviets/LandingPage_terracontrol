@@ -26,10 +26,12 @@ RUN chmod +x /docker-entrypoint.sh
 
 # Copiar configuración base de nginx
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
+RUN mkdir -p /etc/nginx/ssl
+COPY nginx/ssl /etc/nginx/ssl
 
 # Copiar archivos del frontend
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 80 443
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

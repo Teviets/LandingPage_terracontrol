@@ -40,12 +40,23 @@ sudo cp /etc/letsencrypt/live/terracontrolgt.com/privkey.pem nginx/ssl/terracont
 sudo chown $USER:$USER nginx/ssl/*
 chmod 600 nginx/ssl/*
 
+# Copiar los mismos certificados para el contenedor de frontend (no se versionan)
+mkdir -p landing/nginx/ssl
+sudo cp /etc/letsencrypt/live/terracontrolgt.com/fullchain.pem landing/nginx/ssl/terracontrolgt.com.crt
+sudo cp /etc/letsencrypt/live/terracontrolgt.com/privkey.pem landing/nginx/ssl/terracontrolgt.com.key
+sudo chown $USER:$USER landing/nginx/ssl/*
+chmod 600 landing/nginx/ssl/*
+
 # Opción B: Autofirmado (testing)
 mkdir -p nginx/ssl
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout nginx/ssl/terracontrolgt.com.key \
   -out nginx/ssl/terracontrolgt.com.crt \
   -subj "/C=GT/ST=Guatemala/L=Guatemala/O=TerraControl/CN=terracontrolgt.com"
+
+# Reutiliza esos archivos para el contenedor
+cp nginx/ssl/terracontrolgt.com.crt landing/nginx/ssl/
+cp nginx/ssl/terracontrolgt.com.key landing/nginx/ssl/
 ```
 
 ### Paso 2: Validar Configuración

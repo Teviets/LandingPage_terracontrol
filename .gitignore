@@ -145,6 +145,9 @@ vite.config.ts.timestamp-*
 # Certificados SSL (NUNCA guardar en git)
 nginx/ssl/
 nginx/ssl/**
+landing/nginx/ssl/*
+!landing/nginx/ssl/README.md
+!landing/nginx/ssl/.gitkeep
 *.key
 *.crt
 *.pem
