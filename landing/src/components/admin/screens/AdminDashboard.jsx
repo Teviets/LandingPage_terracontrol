@@ -14,7 +14,7 @@ import {
 } from 'chart.js';
 import { useAdminAuth } from '../../../context/AdminAuthContext';
 import { TASKTYPE } from '../../../utils/app/Task';
-import { PERSONALTEST, VENTASTEST } from '../../../utils/app/Test';
+import { VENTASTEST } from '../../../utils/app/Test';
 import { TYPEPROD, CATEGORYPROD } from '../../../utils/app/Inventary';
 import { CULTIVOS } from '../../../utils/app/Cultivos';
 import { departments, municipalities, lotNames } from '../data/geoData';
@@ -2024,11 +2024,6 @@ function AdminDashboard() {
     };
   }, [VENTASTEST, salesData, salesDataLoading, salesDataError]);
 
-  const personnelMockData = useMemo(
-    () => (Array.isArray(PERSONALTEST) ? PERSONALTEST : []),
-    [PERSONALTEST]
-  );
-
   const taskAssignmentStats = useMemo(() => {
     if (avgPersonalTaskData.length) {
       const totalTasks = avgPersonalTaskData.reduce((sum, record) => sum + record.taskCount, 0);
@@ -2055,45 +2050,12 @@ function AdminDashboard() {
         mode: 'remote'
       };
     }
-
-    const taskTypeAssignments = taskTypes
-      .map((taskType) => {
-        let assignedPeople = 0;
-        let totalTasks = 0;
-
-        personnelMockData.forEach((person) => {
-          const tasksByType = person?.info_tareas?.tareas_por_tipo || {};
-          const count = Number(tasksByType?.[taskType.label]) || 0;
-          if (count > 0) {
-            assignedPeople += 1;
-          }
-          totalTasks += count;
-        });
-
-        return {
-          id: taskType.id,
-          label: taskType.label,
-          assignedPeople,
-          percentage: personnelMockData.length
-            ? (assignedPeople / personnelMockData.length) * 100
-            : 0,
-          averageTasksPerPerson: assignedPeople ? totalTasks / assignedPeople : 0
-        };
-      })
-      .filter((entry) => entry.assignedPeople > 0)
-      .sort((a, b) => b.assignedPeople - a.assignedPeople);
-
-    const maxAssignedPeople = taskTypeAssignments.reduce(
-      (max, entry) => Math.max(max, entry.assignedPeople),
-      0
-    );
-
     return {
-      entries: taskTypeAssignments,
-      maxAssigned: maxAssignedPeople,
-      mode: 'mock'
+      entries: [],
+      maxAssigned: 0,
+      mode: 'remote'
     };
-  }, [avgPersonalTaskData, taskTypes, personnelMockData]);
+  }, [avgPersonalTaskData, taskTypes]);
 
   const workforceStats = useMemo(() => {
     const countsSource = workforceSummary;
@@ -2515,105 +2477,126 @@ function AdminDashboard() {
     };
   }, [userInsights.monthlySignups, userInsights.maxMonthlySignups]);
 
-  const renderWorkforceQuadrant = () => (
-    <section className="admin-dashboard__quadrant admin-dashboard__quadrant--requests">
-      <p className="admin-dashboard__quadrant-label">Cuadrante 3</p>
-      <h2>Distribución del personal</h2>
-      <p className="admin-dashboard__workforce-summary">
-        {`Total de colaboradores: ${workforceStats.totalPersonnel}`}
-      </p>
-      {(workforceLoading || workforceError || avgPersonalLoading || avgPersonalError) && (
-        <div className="admin-dashboard__workforce-statuses">
-          {workforceLoading && (
-            <p className="admin-dashboard__workforce-status">Actualizando resumen de personal…</p>
-          )}
-          {workforceError && (
-            <p className="admin-dashboard__workforce-status admin-dashboard__workforce-status--error">
-              {workforceError}
-            </p>
-          )}
-          {avgPersonalLoading && (
-            <p className="admin-dashboard__workforce-status">Actualizando promedios por tarea…</p>
-          )}
-          {avgPersonalError && (
-            <p className="admin-dashboard__workforce-status admin-dashboard__workforce-status--error">
-              {avgPersonalError}
-            </p>
-          )}
+  const renderWorkforceQuadrant = () => {
+    const {
+      entries: rawTaskAssignmentEntries = [],
+      maxAssigned: maxTaskAssignmentValue = 0,
+      mode: taskAssignmentMode = 'remote'
+    } = workforceStats.taskAssignments || {};
+    const hasTaskAssignmentEntries = rawTaskAssignmentEntries.length > 0;
+    const taskAssignmentEntries = hasTaskAssignmentEntries
+      ? rawTaskAssignmentEntries
+      : [
+          {
+            id: 'task-assignment-empty',
+            label: 'Sin datos disponibles',
+            averagePeople: 0,
+            assignedPeople: 0,
+            percentage: 0,
+            taskCount: 0,
+            averageTasksPerPerson: 0
+          }
+        ];
+    const effectiveTaskAssignmentMode = hasTaskAssignmentEntries ? taskAssignmentMode : 'remote';
+
+    return (
+      <section className="admin-dashboard__quadrant admin-dashboard__quadrant--requests">
+        <p className="admin-dashboard__quadrant-label">Cuadrante 3</p>
+        <h2>Distribución del personal</h2>
+        <p className="admin-dashboard__workforce-summary">
+          {`Total de colaboradores: ${workforceStats.totalPersonnel}`}
+        </p>
+        {(workforceLoading || workforceError || avgPersonalLoading || avgPersonalError) && (
+          <div className="admin-dashboard__workforce-statuses">
+            {workforceLoading && (
+              <p className="admin-dashboard__workforce-status">Actualizando resumen de personal…</p>
+            )}
+            {workforceError && (
+              <p className="admin-dashboard__workforce-status admin-dashboard__workforce-status--error">
+                {workforceError}
+              </p>
+            )}
+            {avgPersonalLoading && (
+              <p className="admin-dashboard__workforce-status">Actualizando promedios por tarea…</p>
+            )}
+            {avgPersonalError && (
+              <p className="admin-dashboard__workforce-status admin-dashboard__workforce-status--error">
+                {avgPersonalError}
+              </p>
+            )}
+          </div>
+        )}
+        <div className="admin-dashboard__pie-grid">
+          <article className="admin-dashboard__pie-card">
+            <div className="admin-dashboard__pie-card-header">
+              <h3>Planilla</h3>
+              <span>{`Base: ${workforceStats.payroll.total} personas`}</span>
+            </div>
+            <div className="admin-dashboard__pie-chart">
+              <Doughnut data={payrollPieChart.data} options={payrollPieChart.options} />
+              <div className="admin-dashboard__pie-center">
+                <strong>{workforceStats.payroll.total}</strong>
+                <small>colaboradores</small>
+              </div>
+            </div>
+            <ul className="admin-dashboard__pie-legend">
+              {workforceStats.payroll.segments.map((segment) => (
+                <li key={segment.label}>
+                  <span
+                    className="admin-dashboard__legend-dot"
+                    style={{ backgroundColor: segment.color }}
+                  />
+                  <div>
+                    <p>{segment.label}</p>
+                    <small>{`${segment.count} (${segment.percent.toFixed(1)}%)`}</small>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </article>
+          <article className="admin-dashboard__pie-card">
+            <div className="admin-dashboard__pie-card-header">
+              <h3>Género</h3>
+              <span>{`Base: ${workforceStats.gender.total} personas`}</span>
+            </div>
+            <div className="admin-dashboard__pie-chart">
+              <Doughnut data={genderPieChart.data} options={genderPieChart.options} />
+              <div className="admin-dashboard__pie-center">
+                <strong>{workforceStats.gender.total}</strong>
+                <small>registros</small>
+              </div>
+            </div>
+            <ul className="admin-dashboard__pie-legend">
+              {workforceStats.gender.segments.map((segment) => (
+                <li key={segment.label}>
+                  <span
+                    className="admin-dashboard__legend-dot"
+                    style={{ backgroundColor: segment.color }}
+                  />
+                  <div>
+                    <p>{segment.label}</p>
+                    <small>{`${segment.count} (${segment.percent.toFixed(1)}%)`}</small>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </article>
         </div>
-      )}
-      <div className="admin-dashboard__pie-grid">
-        <article className="admin-dashboard__pie-card">
-          <div className="admin-dashboard__pie-card-header">
-            <h3>Planilla</h3>
-            <span>{`Base: ${workforceStats.payroll.total} personas`}</span>
-          </div>
-          <div className="admin-dashboard__pie-chart">
-            <Doughnut data={payrollPieChart.data} options={payrollPieChart.options} />
-            <div className="admin-dashboard__pie-center">
-              <strong>{workforceStats.payroll.total}</strong>
-              <small>colaboradores</small>
-            </div>
-          </div>
-          <ul className="admin-dashboard__pie-legend">
-            {workforceStats.payroll.segments.map((segment) => (
-              <li key={segment.label}>
-                <span
-                  className="admin-dashboard__legend-dot"
-                  style={{ backgroundColor: segment.color }}
-                />
-                <div>
-                  <p>{segment.label}</p>
-                  <small>{`${segment.count} (${segment.percent.toFixed(1)}%)`}</small>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </article>
-        <article className="admin-dashboard__pie-card">
-          <div className="admin-dashboard__pie-card-header">
-            <h3>Género</h3>
-            <span>{`Base: ${workforceStats.gender.total} personas`}</span>
-          </div>
-          <div className="admin-dashboard__pie-chart">
-            <Doughnut data={genderPieChart.data} options={genderPieChart.options} />
-            <div className="admin-dashboard__pie-center">
-              <strong>{workforceStats.gender.total}</strong>
-              <small>registros</small>
-            </div>
-          </div>
-          <ul className="admin-dashboard__pie-legend">
-            {workforceStats.gender.segments.map((segment) => (
-              <li key={segment.label}>
-                <span
-                  className="admin-dashboard__legend-dot"
-                  style={{ backgroundColor: segment.color }}
-                />
-                <div>
-                  <p>{segment.label}</p>
-                  <small>{`${segment.count} (${segment.percent.toFixed(1)}%)`}</small>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </div>
-      {workforceStats.taskAssignments.entries.length > 0 && (
         <article className="admin-dashboard__task-assignment-card">
           <div className="admin-dashboard__task-assignment-header">
             <h3>Promedio por tipo de tarea</h3>
             <span>
-              {workforceStats.taskAssignments.mode === 'remote'
+              {effectiveTaskAssignmentMode === 'remote'
                 ? 'Datos consolidados del personal en tareas'
                 : 'Colaboradores con asignaciones registradas'}
             </span>
           </div>
           <ul className="admin-dashboard__task-assignment-list">
-            {workforceStats.taskAssignments.entries.map((entry) => {
-              const isRemoteMetrics = workforceStats.taskAssignments.mode === 'remote';
+            {taskAssignmentEntries.map((entry) => {
+              const isRemoteMetrics = effectiveTaskAssignmentMode === 'remote';
               const metricValue = isRemoteMetrics ? entry.averagePeople || 0 : entry.assignedPeople || 0;
-              const barPercent = workforceStats.taskAssignments.maxAssigned
-                ? (metricValue / workforceStats.taskAssignments.maxAssigned) * 100
+              const barPercent = maxTaskAssignmentValue
+                ? (metricValue / maxTaskAssignmentValue) * 100
                 : 0;
               const averageFormatOptions = isRemoteMetrics
                 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
@@ -2649,15 +2632,20 @@ function AdminDashboard() {
               );
             })}
           </ul>
+          {!hasTaskAssignmentEntries && (
+            <p className="admin-dashboard__task-assignment-empty">
+              {avgPersonalError || 'Sin datos disponibles para mostrar.'}
+            </p>
+          )}
         </article>
-      )}
-      {workforceStats.gender.missing > 0 && (
-        <p className="admin-dashboard__workforce-note">
-          {`${workforceStats.gender.missing} colaborador(es) sin registro de género.`}
-        </p>
-      )}
-    </section>
-  );
+        {workforceStats.gender.missing > 0 && (
+          <p className="admin-dashboard__workforce-note">
+            {`${workforceStats.gender.missing} colaborador(es) sin registro de género.`}
+          </p>
+        )}
+      </section>
+    );
+  };
 
   return (
     <div className="admin-dashboard__wrapper">

@@ -1208,6 +1208,14 @@
   transition: width 0.35s ease;
 }
 
+.admin-dashboard__task-assignment-empty {
+  margin: 0;
+  padding: 0.5rem 0 0;
+  text-align: center;
+  color: var(--tc-text-muted);
+  font-size: 0.9rem;
+}
+
 .admin-dashboard__workforce-note {
   margin: 0;
   font-size: 0.85rem;
