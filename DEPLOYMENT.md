@@ -4,40 +4,33 @@
 
 - Docker y Docker Compose instalados
 - Dominio `terracontrolgt.com` configurado
-- Certificado SSL válido (Let's Encrypt o similar)
+- Dominio apuntando al servidor en puertos 80 y 443
 - Variables de entorno configuradas
 
 ## 🔐 Configuración de Certificados SSL
 
-### Opción 1: Let's Encrypt (Recomendado)
+### Let's Encrypt Automático (Recomendado)
 
 ```bash
-# Crear directorios necesarios
-mkdir -p nginx/ssl
+# Configura estas variables en .env.production
+CERTBOT_EMAIL=admin@terracontrolgt.com
+CERTBOT_DOMAINS=terracontrolgt.com,www.terracontrolgt.com
+CERTBOT_PRIMARY_DOMAIN=terracontrolgt.com
 
-# Instalar certbot
-sudo apt-get install certbot python3-certbot-nginx
-
-# Generar certificados
-sudo certbot certonly --standalone -d terracontrolgt.com -d www.terracontrolgt.com
-
-# Copiar certificados
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/fullchain.pem nginx/ssl/terracontrolgt.com.crt
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/privkey.pem nginx/ssl/terracontrolgt.com.key
-
-# Ajustar permisos
-sudo chown $USER:$USER nginx/ssl/*
-chmod 600 nginx/ssl/*
+# Opcional: usa staging para pruebas y evitar rate limits
+CERTBOT_STAGING=0
 ```
+
+El servicio `certbot` emitirá el certificado usando `webroot`, lo renovará cada 12 horas y el contenedor `nginx` recargará la configuración cuando detecte cambios en los archivos.
 
 ### Opción 2: Certificado Autofirmado (para testing)
 
 ```bash
-mkdir -p nginx/ssl
+mkdir -p landing/nginx/ssl
 
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout nginx/ssl/terracontrolgt.com.key \
-  -out nginx/ssl/terracontrolgt.com.crt \
+  -keyout landing/nginx/ssl/terracontrolgt.com.key \
+  -out landing/nginx/ssl/terracontrolgt.com.crt \
   -subj "/C=GT/ST=Guatemala/L=Guatemala/O=TerraControl/CN=terracontrolgt.com"
 ```
 
@@ -190,18 +183,11 @@ docker-compose -f docker-compose.prod.yml down -v
 ## 🔄 Renovar Certificados Let's Encrypt
 
 ```bash
-# Renovar
-sudo certbot renew --dry-run
+# Ver logs del renovador
+docker-compose -f docker-compose.prod.yml logs -f certbot
 
-# Si todo va bien, renovar sin --dry-run
-sudo certbot renew
-
-# Copiar certificados renovados
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/fullchain.pem nginx/ssl/terracontrolgt.com.crt
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/privkey.pem nginx/ssl/terracontrolgt.com.key
-
-# Recargar nginx
-docker exec terracontrol-nginx nginx -s reload
+# Forzar una corrida manual dentro del contenedor
+docker-compose -f docker-compose.prod.yml exec certbot certbot renew --dry-run
 ```
 
 ## 📈 Monitoreo
@@ -243,11 +229,11 @@ docker logs terracontrol-db
 ### Error: "Certificate not found"
 
 ```bash
-# Verificar que los certificados existen
-ls -la nginx/ssl/
+# Verificar el volumen compartido de Let's Encrypt
+docker-compose -f docker-compose.prod.yml exec nginx ls -la /etc/letsencrypt/live/terracontrolgt.com/
 
-# Si faltan, regenerar con Let's Encrypt
-sudo certbot certonly --standalone -d terracontrolgt.com
+# Revisar logs de emisión/renovación
+docker-compose -f docker-compose.prod.yml logs certbot
 ```
 
 ### Error: "API connection refused"

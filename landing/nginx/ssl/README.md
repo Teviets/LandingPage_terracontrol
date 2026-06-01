@@ -1,6 +1,8 @@
 # SSL Certificates
 
-Place your production certificate and key in this directory **on the server before building the image**. The Docker build copies everything from `landing/nginx/ssl` into `/etc/nginx/ssl` inside the container.
+This directory is now only a fallback for local or manual certificates.
+
+In production, the container expects Let's Encrypt files to be mounted at runtime from `/etc/letsencrypt/live/...`, and the `certbot` service handles issuance and renewal automatically.
 
 Expected filenames (can be overridden with env vars):
 

@@ -26,8 +26,7 @@ RUN chmod +x /docker-entrypoint.sh
 
 # Copiar configuración base de nginx
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
-RUN mkdir -p /etc/nginx/ssl
-COPY nginx/ssl /etc/nginx/ssl
+RUN mkdir -p /etc/nginx/ssl /var/www/certbot
 
 # Copiar archivos del frontend
 COPY --from=builder /app/dist /usr/share/nginx/html

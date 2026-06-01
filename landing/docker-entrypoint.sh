@@ -5,8 +5,10 @@ rm -f /etc/nginx/conf.d/*.conf 2>/dev/null || true
 
 SERVER_NAMES=${SERVER_NAMES:-"terracontrolgt.com www.terracontrolgt.com _"}
 API_PROXY_PASS=${API_PROXY_PASS:-http://api:5174/api/}
-SSL_CERT_PATH=${SSL_CERT_PATH:-/etc/nginx/ssl/terracontrolgt.com.crt}
-SSL_KEY_PATH=${SSL_KEY_PATH:-/etc/nginx/ssl/terracontrolgt.com.key}
+SSL_CERT_PATH=${SSL_CERT_PATH:-/etc/letsencrypt/live/terracontrolgt.com/fullchain.pem}
+SSL_KEY_PATH=${SSL_KEY_PATH:-/etc/letsencrypt/live/terracontrolgt.com/privkey.pem}
+ACME_CHALLENGE_ROOT=${ACME_CHALLENGE_ROOT:-/var/www/certbot}
+SSL_WATCH_INTERVAL=${SSL_WATCH_INTERVAL:-300}
 
 APP_SERVER_BLOCK=$(cat <<EOF
   root /usr/share/nginx/html;
@@ -40,6 +42,12 @@ APP_SERVER_BLOCK=$(cat <<EOF
     proxy_request_buffering off;
   }
 
+  location ^~ /.well-known/acme-challenge/ {
+    root $ACME_CHALLENGE_ROOT;
+    default_type "text/plain";
+    try_files \$uri =404;
+  }
+
   location / {
     try_files \$uri \$uri/ /index.html;
     add_header Cache-Control "no-cache, no-store, must-revalidate";
@@ -67,12 +75,20 @@ APP_SERVER_BLOCK=$(cat <<EOF
 EOF
 )
 
-if [ -f "$SSL_CERT_PATH" ] && [ -f "$SSL_KEY_PATH" ]; then
-  echo "✓ SSL certificates found. Enabling HTTPS."
-  cat > /etc/nginx/conf.d/app.conf <<EOF
+render_config() {
+  if [ -f "$SSL_CERT_PATH" ] && [ -f "$SSL_KEY_PATH" ]; then
+    echo "✓ SSL certificates found. Enabling HTTPS."
+    cat > /etc/nginx/conf.d/app.conf <<EOF
 server {
   listen 80;
   server_name $SERVER_NAMES;
+
+  location ^~ /.well-known/acme-challenge/ {
+    root $ACME_CHALLENGE_ROOT;
+    default_type "text/plain";
+    try_files \$uri =404;
+  }
+
   return 301 https://\$host\$request_uri;
 }
 
@@ -85,16 +101,46 @@ server {
 $APP_SERVER_BLOCK
 }
 EOF
-else
-  echo "⚠ SSL certificates not found. Serving over HTTP only."
-  cat > /etc/nginx/conf.d/app.conf <<EOF
+  else
+    echo "⚠ SSL certificates not found. Serving over HTTP only."
+    cat > /etc/nginx/conf.d/app.conf <<EOF
 server {
   listen 80;
   server_name $SERVER_NAMES;
 $APP_SERVER_BLOCK
 }
 EOF
-fi
+  fi
+}
+
+watch_ssl_changes() {
+  last_state=""
+
+  while true; do
+    current_state="missing"
+    if [ -f "$SSL_CERT_PATH" ] && [ -f "$SSL_KEY_PATH" ]; then
+      current_state="$(cksum "$SSL_CERT_PATH" "$SSL_KEY_PATH" 2>/dev/null)"
+    fi
+
+    if [ "$current_state" != "$last_state" ]; then
+      render_config
+      if nginx -t >/dev/null 2>&1; then
+        if [ -f /var/run/nginx.pid ]; then
+          nginx -s reload >/dev/null 2>&1 || true
+        fi
+        last_state="$current_state"
+      else
+        echo "⚠ nginx configuration test failed after SSL change; keeping previous state."
+      fi
+    fi
+
+    sleep "$SSL_WATCH_INTERVAL"
+  done
+}
+
+mkdir -p "$ACME_CHALLENGE_ROOT"
+render_config
+watch_ssl_changes &
 
 echo "Starting nginx..."
 exec nginx -g "daemon off;"

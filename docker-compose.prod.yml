@@ -52,9 +52,19 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      SERVER_NAMES: ${SERVER_NAMES:-terracontrolgt.com www.terracontrolgt.com _}
+      API_PROXY_PASS: ${API_PROXY_PASS:-http://api:5174/api/}
+      SSL_CERT_PATH: ${SSL_CERT_PATH:-/etc/letsencrypt/live/terracontrolgt.com/fullchain.pem}
+      SSL_KEY_PATH: ${SSL_KEY_PATH:-/etc/letsencrypt/live/terracontrolgt.com/privkey.pem}
+      ACME_CHALLENGE_ROOT: /var/www/certbot
+      SSL_WATCH_INTERVAL: ${SSL_WATCH_INTERVAL:-300}
     depends_on:
       api:
         condition: service_healthy
+    volumes:
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
     networks:
       - terracontrol-network
     restart: unless-stopped
@@ -65,8 +75,61 @@ services:
       retries: 3
       start_period: 10s
 
+  certbot:
+    image: certbot/certbot:latest
+    container_name: terracontrol-certbot
+    environment:
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
+      CERTBOT_DOMAINS: ${CERTBOT_DOMAINS:-terracontrolgt.com,www.terracontrolgt.com}
+      CERTBOT_PRIMARY_DOMAIN: ${CERTBOT_PRIMARY_DOMAIN:-terracontrolgt.com}
+      CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
+      CERTBOT_RENEW_INTERVAL: ${CERTBOT_RENEW_INTERVAL:-12h}
+    depends_on:
+      nginx:
+        condition: service_started
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ -z "$$CERTBOT_EMAIL" ]; then
+          echo "CERTBOT_EMAIL is not set. Skipping automatic certificate issuance and renewal."
+          while true; do sleep 3600; done
+        fi
+
+        staging_args=""
+        if [ "$$CERTBOT_STAGING" = "1" ]; then
+          staging_args="--staging"
+        fi
+
+        while true; do
+          extra_domains=$$(printf '%s' "$$CERTBOT_DOMAINS" | tr ',' '\n' | sed '/^$$/d;1d;s/^/-d /' | tr '\n' ' ')
+
+          if certbot certonly --webroot -w /var/www/certbot \
+            $$staging_args \
+            --email "$$CERTBOT_EMAIL" \
+            --agree-tos \
+            --no-eff-email \
+            --keep-until-expiring \
+            -d "$$CERTBOT_PRIMARY_DOMAIN" \
+            $$extra_domains; then
+            certbot renew --webroot -w /var/www/certbot $$staging_args || true
+            sleep "$$CERTBOT_RENEW_INTERVAL"
+          else
+            echo "Certificate issuance failed. Retrying in 5 minutes."
+            sleep 300
+          fi
+        done
+
 volumes:
   postgres-data:
+    driver: local
+  letsencrypt:
+    driver: local
+  certbot-www:
     driver: local
 
 networks:

@@ -29,34 +29,16 @@
 
 ## 🚀 CÓMO DESPLEGAR (3 PASOS)
 
-### Paso 1: Generar Certificados SSL
+### Paso 1: Configurar SSL Automático
 
 ```bash
-# Opción A: Let's Encrypt (RECOMENDADO)
-mkdir -p nginx/ssl
-sudo certbot certonly --standalone -d terracontrolgt.com -d www.terracontrolgt.com
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/fullchain.pem nginx/ssl/terracontrolgt.com.crt
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/privkey.pem nginx/ssl/terracontrolgt.com.key
-sudo chown $USER:$USER nginx/ssl/*
-chmod 600 nginx/ssl/*
+# Crear .env.production y definir al menos estas variables
+CERTBOT_EMAIL=admin@terracontrolgt.com
+CERTBOT_DOMAINS=terracontrolgt.com,www.terracontrolgt.com
+CERTBOT_PRIMARY_DOMAIN=terracontrolgt.com
 
-# Copiar los mismos certificados para el contenedor de frontend (no se versionan)
-mkdir -p landing/nginx/ssl
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/fullchain.pem landing/nginx/ssl/terracontrolgt.com.crt
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/privkey.pem landing/nginx/ssl/terracontrolgt.com.key
-sudo chown $USER:$USER landing/nginx/ssl/*
-chmod 600 landing/nginx/ssl/*
-
-# Opción B: Autofirmado (testing)
-mkdir -p nginx/ssl
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout nginx/ssl/terracontrolgt.com.key \
-  -out nginx/ssl/terracontrolgt.com.crt \
-  -subj "/C=GT/ST=Guatemala/L=Guatemala/O=TerraControl/CN=terracontrolgt.com"
-
-# Reutiliza esos archivos para el contenedor
-cp nginx/ssl/terracontrolgt.com.crt landing/nginx/ssl/
-cp nginx/ssl/terracontrolgt.com.key landing/nginx/ssl/
+# Opcional para pruebas contra Let's Encrypt staging
+CERTBOT_STAGING=0
 ```
 
 ### Paso 2: Validar Configuración
@@ -286,26 +268,19 @@ curl -I https://terracontrolgt.com -k
 
 ## 🚨 IMPORTANTE: Certificados SSL
 
-⚠️ **DEBES crear los certificados ANTES de desplegar:**
+⚠️ **DEBES configurar `CERTBOT_EMAIL` antes de desplegar** para que `certbot` emita y renueve automáticamente:
 
 ```bash
-# Opción Let's Encrypt (RECOMENDADO)
-sudo certbot certonly --standalone -d terracontrolgt.com -d www.terracontrolgt.com
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/fullchain.pem nginx/ssl/terracontrolgt.com.crt
-sudo cp /etc/letsencrypt/live/terracontrolgt.com/privkey.pem nginx/ssl/terracontrolgt.com.key
-
-# O generar autofirmados para testing
-mkdir -p nginx/ssl && openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout nginx/ssl/terracontrolgt.com.key \
-  -out nginx/ssl/terracontrolgt.com.crt \
-  -subj "/C=GT/ST=Guatemala/L=Guatemala/O=TerraControl/CN=terracontrolgt.com"
+CERTBOT_EMAIL=admin@terracontrolgt.com
+CERTBOT_DOMAINS=terracontrolgt.com,www.terracontrolgt.com
+CERTBOT_PRIMARY_DOMAIN=terracontrolgt.com
 ```
 
 ---
 
 ## 🎯 PRÓXIMOS PASOS
 
-1. ✅ Generar certificados SSL (ver arriba)
+1. ✅ Configurar variables de certbot (ver arriba)
 2. ✅ Ejecutar `./validate-deployment.sh`
 3. ✅ Ejecutar `docker-compose -f docker-compose.prod.yml up -d`
 4. ✅ Esperar ~2-3 minutos a que todo se inicie
@@ -320,7 +295,7 @@ mkdir -p nginx/ssl && openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 - Los logs muestran el progreso: `./docker-cli.sh docker-compose.prod.yml logs`
 - Los certificados SSL están en `.gitignore` (nunca se guardan en Git)
 - El script `docker-cli.sh` tiene comandos útiles para mantenimiento
-- Para renovar certs Let's Encrypt: `sudo certbot renew`
+- La renovación corre automáticamente en el servicio `certbot`
 
 ---
 

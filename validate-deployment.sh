@@ -66,7 +66,7 @@ echo ""
 
 echo -e "${BLUE}1. Verificando archivos principales...${NC}"
 check_file "docker-compose.prod.yml"
-check_file "Dockerfile"
+check_file "landing/Dockerfile"
 check_file "server/Dockerfile"
 check_file "server/docker-entrypoint.sh"
 check_file "server/scripts/init-db.js"
@@ -76,7 +76,7 @@ echo ""
 echo -e "${BLUE}2. Verificando configuración de Nginx...${NC}"
 check_file "nginx/nginx.conf"
 check_file "nginx/conf.d/terracontrol.conf"
-check_dir "nginx/ssl"
+check_dir "landing/nginx/ssl"
 echo ""
 
 echo -e "${BLUE}3. Verificando documentación...${NC}"
@@ -107,15 +107,23 @@ fi
 echo ""
 
 echo -e "${BLUE}7. Verificando certificados SSL...${NC}"
-if [ -f "nginx/ssl/terracontrolgt.com.crt" ] && [ -f "nginx/ssl/terracontrolgt.com.key" ]; then
-  echo -e "${GREEN}✓${NC} Certificados SSL encontrados"
+if grep -q '^CERTBOT_EMAIL=' .env.production 2>/dev/null; then
+  certbot_email=$(grep '^CERTBOT_EMAIL=' .env.production | cut -d'=' -f2-)
+  if [ -n "$certbot_email" ]; then
+    echo -e "${GREEN}✓${NC} CERTBOT_EMAIL configurado para emisión y renovación automática"
+    ((checks_passed++))
+  else
+    echo -e "${YELLOW}⚠${NC} CERTBOT_EMAIL está vacío en .env.production"
+    echo -e "   Sin este valor, certbot no emitirá ni renovará certificados."
+    ((checks_failed++))
+  fi
+elif [ -f "landing/nginx/ssl/terracontrolgt.com.crt" ] && [ -f "landing/nginx/ssl/terracontrolgt.com.key" ]; then
+  echo -e "${GREEN}✓${NC} Certificados locales encontrados en landing/nginx/ssl"
   ((checks_passed++))
 else
-  echo -e "${YELLOW}⚠${NC} Certificados SSL no encontrados - Necesitas generarlos antes de desplegar"
-  echo -e "   Usa: openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\"
-  echo -e "        -keyout nginx/ssl/terracontrolgt.com.key \\"
-  echo -e "        -out nginx/ssl/terracontrolgt.com.crt \\"
-  echo -e "        -subj \"/C=GT/ST=Guatemala/L=Guatemala/O=TerraControl/CN=terracontrolgt.com\""
+  echo -e "${YELLOW}⚠${NC} No hay configuración automática ni certificados locales listos"
+  echo -e "   Configura CERTBOT_EMAIL en .env.production para renovación automática, o"
+  echo -e "   coloca certificados de respaldo en landing/nginx/ssl/."
   ((checks_failed++))
 fi
 echo ""
@@ -152,7 +160,7 @@ if [ $checks_failed -eq 0 ]; then
   echo -e "${GREEN}✅ ¡TODO LISTO PARA DESPLEGAR!${NC}"
   echo ""
   echo "Próximos pasos:"
-  echo "  1. Asegurar que los certificados SSL estén en nginx/ssl/"
+  echo "  1. Configurar CERTBOT_EMAIL en .env.production"
   echo "  2. Configurar .env.production"
   echo "  3. Ejecutar: docker-compose -f docker-compose.prod.yml up -d"
   echo ""
