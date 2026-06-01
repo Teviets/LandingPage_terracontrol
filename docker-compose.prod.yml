@@ -78,19 +78,7 @@ services:
   certbot:
     image: certbot/certbot:latest
     container_name: terracontrol-certbot
-    environment:
-      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
-      CERTBOT_DOMAINS: ${CERTBOT_DOMAINS:-terracontrolgt.com,www.terracontrolgt.com}
-      CERTBOT_PRIMARY_DOMAIN: ${CERTBOT_PRIMARY_DOMAIN:-terracontrolgt.com}
-      CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
-      CERTBOT_RENEW_INTERVAL: ${CERTBOT_RENEW_INTERVAL:-12h}
-    depends_on:
-      nginx:
-        condition: service_started
-    volumes:
-      - letsencrypt:/etc/letsencrypt
-      - certbot-www:/var/www/certbot
-    command:
+    entrypoint:
       - /bin/sh
       - -c
       - |
@@ -123,6 +111,18 @@ services:
             sleep 300
           fi
         done
+    environment:
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
+      CERTBOT_DOMAINS: ${CERTBOT_DOMAINS:-terracontrolgt.com,www.terracontrolgt.com}
+      CERTBOT_PRIMARY_DOMAIN: ${CERTBOT_PRIMARY_DOMAIN:-terracontrolgt.com}
+      CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
+      CERTBOT_RENEW_INTERVAL: ${CERTBOT_RENEW_INTERVAL:-12h}
+    depends_on:
+      nginx:
+        condition: service_started
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
 
 volumes:
   postgres-data:
